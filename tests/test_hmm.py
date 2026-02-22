@@ -1,9 +1,9 @@
-"""Tests for HMM and HMM_Classifier classes."""
+"""Tests for HMM and HMMClassifier classes."""
 
 import numpy as np
 import pytest
 
-from hmm import HMM, HMM_Classifier
+from hmm import HMM, HMMClassifier
 
 
 class TestHMMClass:
@@ -54,11 +54,11 @@ class TestHMMClass:
 
 
 class TestHMMClassifier:
-    """Tests for HMM_Classifier class."""
+    """Tests for HMMClassifier class."""
 
     def test_create_classifier(self) -> None:
         """Test creating HMM classifier."""
-        classifier = HMM_Classifier()
+        classifier = HMMClassifier()
         assert classifier.pos_hmm is None
         assert classifier.neg_hmm is None
 
@@ -69,7 +69,7 @@ class TestHMMClassifier:
         V = [1, 2, 3, 4, 5, 6]
         pos_hmm = HMM(n_states=2, A=A, B=B, V=V)
 
-        classifier = HMM_Classifier()
+        classifier = HMMClassifier()
         classifier.add_pos_hmm(pos_hmm)
 
         assert classifier.pos_hmm is pos_hmm
@@ -81,14 +81,14 @@ class TestHMMClassifier:
         V = [1, 2, 3, 4, 5, 6]
         neg_hmm = HMM(n_states=2, A=A, B=B, V=V)
 
-        classifier = HMM_Classifier()
+        classifier = HMMClassifier()
         classifier.add_neg_hmm(neg_hmm)
 
         assert classifier.neg_hmm is neg_hmm
 
     def test_classify_missing_hmm(self) -> None:
         """Test classification raises error when HMMs are missing."""
-        classifier = HMM_Classifier()
+        classifier = HMMClassifier()
 
         with pytest.raises(ValueError, match="pos/neg hmm.*missing"):
             classifier.classify([1, 2, 3])
@@ -102,7 +102,7 @@ class TestHMMClassifier:
         pos_hmm = HMM(n_states=2, A=A, B=B, V=V)
         neg_hmm = HMM(n_states=2, A=A, B=B, V=V)
 
-        classifier = HMM_Classifier(pos_hmm=pos_hmm, neg_hmm=neg_hmm)
+        classifier = HMMClassifier(pos_hmm=pos_hmm, neg_hmm=neg_hmm)
 
         with pytest.raises(NotImplementedError, match="forward algorithm"):
             classifier.classify([1, 2, 3])
