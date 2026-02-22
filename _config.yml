@@ -1,0 +1,38 @@
+# Jupyter Book configuration
+# See https://jupyterbook.org/en/stable/customize/config.html
+
+project:
+  title: HMMPY
+  description: Hidden Markov Models in Python - based on Rabiner (1989) tutorial
+  author: Michael Hamilton
+  copyright: "2026"
+  repository: https://github.com/bio-comp/hmmpy
+  repository_branch: master
+
+launch_buttons:
+  colab_url: "https://colab.research.google.com"
+  github_url: "https://github.com/bio-comp/hmmpy"
+
+html:
+  title: HMMPY Documentation
+  description: Hidden Markov Models in Python
+  home_page_in_navbar: true
+  use_edit_page_button: true
+  use_issues_button: true
+  repository_url: https://github.com/bio-comp/hmmpy
+  repository_branch: master
+
+  theme:
+    name: pydata-sphinx-theme
+
+  extra_navbar:
+    - text: "GitHub"
+      url: https://github.com/bio-comp/hmmpy
+    - text: "PyPI"
+      url: https://pypi.org/project/hmmpy/
+
+execute:
+  execute_notebooks: auto
+  timeout: 120
+
+bibtex_bibfiles: []

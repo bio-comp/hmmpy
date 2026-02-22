@@ -65,7 +65,7 @@ trained_hmm = baum_welch(hmm, [[1, 2, 3], [6, 5, 4]], epochs=20)
 
 ## Documentation
 
-- [Rabiner (1989) Tutorial](./HMMPY_doc.pdf) - The theoretical foundation
+- [Online Documentation](https://bio-comp.github.io/hmmpy/) - Interactive notebooks hosted on GitHub Pages
 - Jupyter notebooks in `notebooks/` - Examples and explanations
 
 ## Development
