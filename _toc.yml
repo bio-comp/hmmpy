@@ -1,0 +1,14 @@
+# Table of contents
+# Learn more at https://jupyterbook.org/en/stable/customize/toc.html
+
+format: jb-book
+root: notebooks/01-introduction
+chapters:
+  - file: notebooks/02-forward-algorithm
+    title: 2. Forward Algorithm
+  - file: notebooks/03-viterbi-algorithm
+    title: 3. Viterbi Algorithm
+  - file: notebooks/04-baum-welch
+    title: 4. Baum-Welch Training
+  - file: notebooks/05-applications
+    title: 5. Applications
