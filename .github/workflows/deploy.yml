@@ -32,7 +32,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e ".[docs]"
+          pip install jupyter-book==1.0.0 sphinx pydata-sphinx-theme
 
       - name: Build the book
         run: |
