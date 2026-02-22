@@ -153,9 +153,10 @@ def viterbi(
     obs_indices = symbol_index(hmm, obs)
 
     delta = np.zeros([hmm.N, T], dtype=float)
+    eps = 1e-300  # Avoid log(0)
 
     if scaling:
-        delta[:, 0] = np.log(hmm.Pi) + np.log(hmm.B[:, obs_indices[0]])
+        delta[:, 0] = np.log(hmm.Pi + eps) + np.log(hmm.B[:, obs_indices[0]] + eps)
     else:
         delta[:, 0] = hmm.Pi * hmm.B[:, obs_indices[0]]
 
@@ -163,8 +164,8 @@ def viterbi(
 
     if scaling:
         for t in range(1, T):
-            nus = rearrange(delta[:, t - 1], "n -> n 1") + np.log(hmm.A)
-            delta[:, t] = nus.max(0) + np.log(hmm.B[:, obs_indices[t]])
+            nus = rearrange(delta[:, t - 1], "n -> n 1") + np.log(hmm.A + eps)
+            delta[:, t] = nus.max(0) + np.log(hmm.B[:, obs_indices[t]] + eps)
             psi[:, t] = nus.argmax(0)
     else:
         for t in range(1, T):
