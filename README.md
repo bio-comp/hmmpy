@@ -9,14 +9,26 @@ A Python implementation of Hidden Markov Models based on the Rabiner (1989) tuto
 
 ## Installation
 
+### pip
+
 ```bash
 pip install hmmpy
+```
+
+### uv
+
+```bash
+uv pip install hmmpy
 ```
 
 Or install in development mode:
 
 ```bash
+# pip
 pip install -e ".[all]"
+
+# uv
+uv pip install -e ".[all]"
 ```
 
 ## Quick Start
