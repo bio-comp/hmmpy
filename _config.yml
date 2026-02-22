@@ -9,4 +9,4 @@ html:
   title: HMMPY Documentation
 
 execute:
-  execute_notebooks: auto
+  execute_notebooks: cache
