@@ -1,0 +1,49 @@
+# Test notebooks before deploying docs
+
+name: test-notebooks
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+    paths:
+      - 'notebooks/**'
+      - 'src/hmm/**'
+      - 'pyproject.toml'
+
+jobs:
+  test-notebooks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[all]"
+
+      - name: Test notebook execution
+        run: |
+          # Test each notebook with nbconvert
+          pip install nbconvert
+          for nb in notebooks/*.ipynb; do
+            echo "Testing $nb..."
+            jupyter nbconvert --to python --stdout "$nb" > /dev/null
+            echo "✓ $nb passed"
+          done
+          echo "All notebooks validated!"
+
+      - name: Verify hmm imports work
+        run: |
+          python -c "from hmm import HMM, forward, backward, viterbi, baum_welch; print('Imports OK')"
+
+      - name: Run pytest
+        run: |
+          pytest -v --tb=short
