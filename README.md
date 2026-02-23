@@ -57,11 +57,33 @@ trained_hmm = baum_welch(hmm, [[1, 2, 3], [6, 5, 4]], epochs=20)
 
 | Algorithm | Description |
 |-----------|-------------|
-| **Forward** | Calculate P(Obs\|HMM) using forward variables |
+| **Forward** | Calculate P(Obs|HMM) using forward variables |
 | **Backward** | Calculate backward probabilities forposterior decoding |
 | **Viterbi** | Find most likely state sequence |
 | **Baum-Welch** | Train HMM parameters using EM |
 | **HMMClassifier** | Binary classification using two HMMs |
+
+## Visualization
+
+```python
+from hmm.viz import (
+    plot_transition_matrix,
+    plot_emission_matrix,
+    plot_state_probabilities,
+    plot_viterbi_path,
+    plot_state_diagram,
+    plot_gaussian_ellipses,
+)
+
+# Plot HMM matrices
+fig = plot_transition_matrix(hmm)
+
+# Plot state diagram (requires networkx)
+fig = plot_state_diagram(hmm)
+
+# Plot Gaussian ellipses for continuous HMMs
+fig = plot_gaussian_ellipses(means, covariances)
+```
 
 ## Documentation
 
