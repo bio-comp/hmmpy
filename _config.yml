@@ -1,7 +1,8 @@
 # Jupyter Book configuration
 
 title: HMMPY
-author: Michael Hamilton
+author: Mike Hamilton
+copyright: 2026
 
 exclude_patterns: [".DS_Store", "Thumbs.db"]
 
@@ -10,3 +11,10 @@ html:
 
 execute:
   execute_notebooks: cache
+
+parse:
+  myst_enable_extensions:
+    - colon_fence
+    - linkify
+    - substitution
+    - tasklist
