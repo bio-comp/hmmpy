@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from typing import Any
 
 import matplotlib.pyplot as plt
-import numpy as np
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from numpy.typing import NDArray
