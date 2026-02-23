@@ -181,11 +181,24 @@ git push -u origin feature/issue-number-short-description
 - `numpy` - Numerical computing
 - `matplotlib` - Visualization (optional, for graphing)
 - `einops` - Tensor operations (for migration)
+- `scipy` - For Gaussian PDF calculations (continuous HMM)
+- `networkx` - For state diagram visualization
 - `pytest` - Testing framework
 - `ruff` - Linting and formatting
 - `mypy` - Static type checking
 - `pytest-cov` - Coverage reporting
 - `hypothesis` - Property-based testing
+
+## Continuous HMM Support
+
+For continuous observation densities (per Rabiner tutorial Section VIII), reference `docs/rabiner1_machine_readable.md` for:
+- Gaussian emission formulas
+- Mixture Gaussian (GMM-HMM) reestimation
+- Forward/backward for continuous emissions
+
+Key classes to implement:
+- `GaussianHMM` - Single Gaussian per state
+- `MixtureGaussianHMM` - Gaussian mixtures per state
 
 ## Documentation (JupyterBook)
 
@@ -217,6 +230,27 @@ The `.github/workflows/deploy.yml` workflow automatically builds and deploys doc
 1. Go to Repository Settings → Pages
 2. Set Source to "GitHub Actions"
 3. Docs will be available at `https://bio-comp.github.io/hmmpy/`
+
+## Visualization Module (hmm.viz)
+
+The package includes a visualization submodule for plotting HMM parameters and state trajectories.
+
+### Usage
+
+```python
+from hmm.viz import plot_transition_matrix, plot_emission_matrix
+from hmm.viz import plot_state_probabilities, plot_viterbi_path
+from hmm.viz import plot_state_diagram, plot_gaussian_ellipses
+
+# Plot HMM matrices
+fig = plot_transition_matrix(hmm)
+
+# Plot state diagram (requires networkx)
+fig = plot_state_diagram(hmm)
+
+# Plot Gaussian ellipses for continuous HMMs
+fig = plot_gaussian_ellipses(means, covariances)
+```
 
 ## Type Checking
 
