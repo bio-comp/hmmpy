@@ -36,6 +36,7 @@ dev = [
 docs = [
     "jupyter-book==1.0.0",
     "pydata-sphinx-theme>=0.14",
+    "networkx>=3.0",
 ]
 notebook = [
     "jupyterlab>=4.0",
