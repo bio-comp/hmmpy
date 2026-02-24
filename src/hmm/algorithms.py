@@ -189,11 +189,11 @@ def baum_welch(
 
     Implements the Baum-Welch algorithm from Rabiner (1989).
 
-    Note: For GaussianHMM, update_b=False is required (continuous emission
-    training not yet implemented).
+    For GaussianHMM with update_b=True, uses continuous emission
+    reestimation formulas (Rabiner Section VIII, Eq. 53-54).
 
     Args:
-        hmm: HMM model to train
+        hmm: HMM model (discrete HMM or GaussianHMM) to train
         obs_seqs: list of observation sequences to train over
         epochs: number of iterations to perform EM (default: 20)
         val_set: validation data set (optional, for early stopping)
@@ -207,28 +207,25 @@ def baum_welch(
 
     Returns:
         Trained HMM model
-
-    Raises:
-        ValueError: if GaussianHMM is used with update_b=True
     """
     # Check if this is a GaussianHMM (doesn't have M attribute)
     is_gaussian = not hasattr(hmm, "M")
-
-    if is_gaussian and update_b:
-        raise ValueError(
-            "GaussianHMM training with update_b=True is not yet supported. "
-            "Use update_b=False to only update transition matrix and initial distribution."
-        )
 
     import copy
 
     LLs: list[float] = []
     val_LLs: list[float] = []
     best_A = copy.deepcopy(hmm.A)
-    best_B = copy.deepcopy(hmm.B)
     best_Pi = copy.deepcopy(hmm.Pi)
     best_epoch = -1
     best_val_LL = float("-inf") if val_set is not None else None
+
+    # For GaussianHMM: store best means and covariances for validation
+    if is_gaussian:
+        best_means = copy.deepcopy(hmm.means)
+        best_covars = copy.deepcopy(hmm.covars)
+    else:
+        best_B = copy.deepcopy(hmm.B)
 
     for epoch in range(epochs):
         LL_epoch = 0.0
@@ -237,7 +234,13 @@ def baum_welch(
         expect_si_sj_all = np.zeros([hmm.N, hmm.N], dtype=float)
         expect_si_sj_all_TM1 = np.zeros([hmm.N, hmm.N], dtype=float)
         expect_si_t0_all = np.zeros(hmm.N, dtype=float)
-        expect_si_vk_all = np.zeros([hmm.N, hmm.M], dtype=float)
+
+        # For GaussianHMM: accumulators for means and covariances
+        if is_gaussian:
+            expect_obs_sum = np.zeros([hmm.N, hmm.n_features], dtype=float)
+            expect_obs_cov = np.zeros([hmm.N, hmm.n_features, hmm.n_features], dtype=float)
+        else:
+            expect_si_vk_all = np.zeros([hmm.N, hmm.M], dtype=float)
 
         for obs in obs_seqs:
             obs = list(obs)
@@ -278,12 +281,21 @@ def baum_welch(
             expect_si_sj_all_TM1 += w_k * xi[:, :, : T - 1].sum(2)
 
             if update_b:
-                B_bar = np.zeros([hmm.N, hmm.M], dtype=float)
-                for k in range(hmm.M):
-                    which = np.array([hmm.V[k] == x for x in obs_symbols])
-                    B_bar[:, k] = gamma.T[which, :].sum(0)
-
-                expect_si_vk_all += w_k * B_bar
+                if is_gaussian:
+                    # Accumulate weighted observations for means/covariances update
+                    for t in range(T):
+                        obs_t = np.asarray(obs[t])
+                        for j in range(hmm.N):
+                            expect_obs_sum[j] += gamma[j, t] * obs_t
+                            diff = obs_t - hmm.means[j]
+                            expect_obs_cov[j] += gamma[j, t] * np.outer(diff, diff)
+                else:
+                    # Discrete B matrix update
+                    B_bar = np.zeros([hmm.N, hmm.M], dtype=float)
+                    for k in range(hmm.M):
+                        which = np.array([hmm.V[k] == x for x in obs_symbols])
+                        B_bar[:, k] = gamma.T[which, :].sum(0)
+                    expect_si_vk_all += w_k * B_bar
 
         if update_pi:
             expect_si_t0_all = expect_si_t0_all / np.sum(expect_si_t0_all)
@@ -297,14 +309,26 @@ def baum_welch(
             hmm.A = A_bar
 
         if update_b:
-            for i in range(hmm.N):
-                if expect_si_all[i] > 0:
-                    expect_si_vk_all[i, :] = expect_si_vk_all[i, :] / expect_si_all[i]
+            if is_gaussian:
+                # Update means (Rabiner Eq. 53)
+                for j in range(hmm.N):
+                    if expect_si_all[j] > 0:
+                        hmm.means[j] = expect_obs_sum[j] / expect_si_all[j]
 
-            hmm.B = expect_si_vk_all
+                # Update covariances (Rabiner Eq. 54)
+                for j in range(hmm.N):
+                    if expect_si_all[j] > 0:
+                        hmm.covars[j] = expect_obs_cov[j] / expect_si_all[j]
+            else:
+                # Discrete B matrix update
+                for i in range(hmm.N):
+                    if expect_si_all[i] > 0:
+                        expect_si_vk_all[i, :] = expect_si_vk_all[i, :] / expect_si_all[i]
 
-            for i in hmm.F.keys():
-                hmm.B[i, :] = hmm.F[i]
+                hmm.B = expect_si_vk_all
+
+                for i in hmm.F.keys():
+                    hmm.B[i, :] = hmm.F[i]
 
         LLs.append(LL_epoch)
 
@@ -323,8 +347,12 @@ def baum_welch(
 
             if best_val_LL is None or val_LL_epoch > best_val_LL:
                 best_A = copy.deepcopy(hmm.A)
-                best_B = copy.deepcopy(hmm.B)
                 best_Pi = copy.deepcopy(hmm.Pi)
+                if is_gaussian:
+                    best_means = copy.deepcopy(hmm.means)
+                    best_covars = copy.deepcopy(hmm.covars)
+                else:
+                    best_B = copy.deepcopy(hmm.B)
                 best_epoch = epoch
                 best_val_LL = val_LL_epoch
 
@@ -364,7 +392,11 @@ def baum_welch(
 
     if val_set is not None:
         hmm.A = best_A
-        hmm.B = best_B
         hmm.Pi = best_Pi
+        if hasattr(hmm, "B"):
+            hmm.B = best_B
+        else:
+            hmm.means = best_means
+            hmm.covars = best_covars
 
     return hmm
