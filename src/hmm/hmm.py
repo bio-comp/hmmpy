@@ -180,6 +180,17 @@ class HMM:
         else:
             self.Labels = list(range(self.N))
 
+    def get_emission_probs(self, obs_t: int) -> npt.NDArray:
+        """Returns emission probabilities for all states given observation obs_t.
+
+        Args:
+            obs_t: Observation symbol (must be in V)
+
+        Returns:
+            Array of shape (N,) with emission probabilities for each state
+        """
+        return self.B[:, self.symbol_map[obs_t]]
+
     def __repr__(self) -> str:
         retn = ""
         retn += f"num hiddens: {self.N}\n"
