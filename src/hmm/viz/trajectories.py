@@ -5,7 +5,7 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
-from matplotlib.figure import Figure
+from matplotlib.figure import Figure, SubFigure
 from numpy.typing import NDArray
 
 
@@ -17,7 +17,7 @@ def plot_state_probabilities(
     ax: Axes | None = None,
     figsize: tuple[int, int] = (10, 4),
     **kwargs: Any,
-) -> Figure:
+) -> Figure | SubFigure:
     """Plot forward state probabilities over time.
 
     Args:
@@ -36,7 +36,7 @@ def plot_state_probabilities(
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
-        fig = ax.figure
+        fig = ax.figure  # type: ignore[assignment]
 
     T = len(obs)
     t = range(T)
@@ -81,7 +81,7 @@ def plot_viterbi_path(
     ax: Axes | None = None,
     figsize: tuple[int, int] = (10, 5),
     **kwargs: Any,
-) -> Figure:
+) -> Figure | SubFigure:
     """Plot Viterbi decoded path with state probabilities.
 
     Args:
@@ -101,7 +101,7 @@ def plot_viterbi_path(
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
-        fig = ax.figure
+        fig = ax.figure  # type: ignore[assignment]
 
     T = len(obs)
     t = range(T)
@@ -145,7 +145,7 @@ def plot_baum_welch_convergence(
     ax: Axes | None = None,
     figsize: tuple[int, int] = (10, 4),
     **kwargs: Any,
-) -> Figure:
+) -> Figure | SubFigure:
     """Plot Baum-Welch training convergence.
 
     Args:
@@ -161,7 +161,7 @@ def plot_baum_welch_convergence(
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
-        fig = ax.figure
+        fig = ax.figure  # type: ignore[assignment]
 
     epochs = range(len(log_likelihoods))
     ax.plot(epochs, log_likelihoods, "-o", color="steelblue", label="Training", **kwargs)
