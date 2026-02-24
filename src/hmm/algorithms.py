@@ -35,18 +35,16 @@ def symbol_index(hmm: "HMM", obs: Sequence[int]) -> list[int]:
 
 def forward(
     hmm: "HMM",
-    obs: Sequence[int],
+    obs: Sequence[int] | Sequence[npt.NDArray],
     scaling: bool = True,
 ) -> tuple[float, npt.NDArray, npt.NDArray] | tuple[float, npt.NDArray]:
-    """
-    Calculate the probability of an observation sequence, Obs,
-    given the model, P(Obs|hmm).
+    """Calculate the probability of an observation sequence, Obs, given the model.
 
     Implements the forward algorithm from Rabiner (1989).
 
     Args:
-        hmm: the HMM model
-        obs: observation sequence
+        hmm: the HMM model (discrete HMM or GaussianHMM)
+        obs: observation sequence (integers for discrete, arrays for continuous)
         scaling: whether to use scaling (recommended for numerical stability)
 
     Returns:
@@ -60,22 +58,20 @@ def forward(
     """
     T = len(obs)
 
-    obs_indices = symbol_index(hmm, obs)
-
     c: npt.NDArray | None = None
     if scaling:
         c = np.zeros(T, dtype=float)
 
     alpha = np.zeros([hmm.N, T], dtype=float)
 
-    alpha[:, 0] = hmm.Pi * hmm.B[:, obs_indices[0]]
+    alpha[:, 0] = hmm.Pi * hmm.get_emission_probs(obs[0])
 
     if scaling and c is not None:
         c[0] = 1.0 / np.sum(alpha[:, 0])
         alpha[:, 0] = c[0] * alpha[:, 0]
 
     for t in range(1, T):
-        alpha[:, t] = np.dot(alpha[:, t - 1], hmm.A) * hmm.B[:, obs_indices[t]]
+        alpha[:, t] = np.dot(alpha[:, t - 1], hmm.A) * hmm.get_emission_probs(obs[t])
 
         if scaling and c is not None:
             c[t] = 1.0 / np.sum(alpha[:, t])
@@ -91,7 +87,7 @@ def forward(
 
 def backward(
     hmm: "HMM",
-    obs: Sequence[int],
+    obs: Sequence[int] | Sequence[npt.NDArray],
     c: npt.NDArray | None = None,
 ) -> npt.NDArray:
     """
@@ -110,15 +106,13 @@ def backward(
     """
     T = len(obs)
 
-    obs_indices = symbol_index(hmm, obs)
-
     beta = np.zeros([hmm.N, T], dtype=float)
     beta[:, T - 1] = 1.0
     if c is not None:
         beta[:, T - 1] = beta[:, T - 1] * c[T - 1]
 
     for t in reversed(range(T - 1)):
-        beta[:, t] = np.dot(hmm.A, (hmm.B[:, obs_indices[t + 1]] * beta[:, t + 1]))
+        beta[:, t] = np.dot(hmm.A, (hmm.get_emission_probs(obs[t + 1]) * beta[:, t + 1]))
 
         if c is not None:
             beta[:, t] = beta[:, t] * c[t]
@@ -128,7 +122,7 @@ def backward(
 
 def viterbi(
     hmm: "HMM",
-    obs: Sequence[int],
+    obs: Sequence[int] | Sequence[npt.NDArray],
     scaling: bool = True,
 ) -> tuple[list[int], npt.NDArray, npt.NDArray]:
     """
@@ -150,27 +144,25 @@ def viterbi(
     """
     T = len(obs)
 
-    obs_indices = symbol_index(hmm, obs)
-
     delta = np.zeros([hmm.N, T], dtype=float)
     eps = 1e-300  # Avoid log(0)
 
     if scaling:
-        delta[:, 0] = np.log(hmm.Pi + eps) + np.log(hmm.B[:, obs_indices[0]] + eps)
+        delta[:, 0] = np.log(hmm.Pi + eps) + np.log(hmm.get_emission_probs(obs[0]) + eps)
     else:
-        delta[:, 0] = hmm.Pi * hmm.B[:, obs_indices[0]]
+        delta[:, 0] = hmm.Pi * hmm.get_emission_probs(obs[0])
 
     psi = np.zeros([hmm.N, T], dtype=int)
 
     if scaling:
         for t in range(1, T):
             nus = rearrange(delta[:, t - 1], "n -> n 1") + np.log(hmm.A + eps)
-            delta[:, t] = nus.max(0) + np.log(hmm.B[:, obs_indices[t]] + eps)
+            delta[:, t] = nus.max(0) + np.log(hmm.get_emission_probs(obs[t]) + eps)
             psi[:, t] = nus.argmax(0)
     else:
         for t in range(1, T):
             nus = rearrange(delta[:, t - 1], "n -> n 1") * hmm.A
-            delta[:, t] = nus.max(0) * hmm.B[:, obs_indices[t]]
+            delta[:, t] = nus.max(0) * hmm.get_emission_probs(obs[t])
             psi[:, t] = nus.argmax(0)
 
     q_star = [int(np.argmax(delta[:, T - 1]))]
@@ -182,9 +174,9 @@ def viterbi(
 
 def baum_welch(
     hmm: "HMM",
-    obs_seqs: list[Sequence[int]],
+    obs_seqs: list[Sequence[int] | Sequence[npt.NDArray]],
     epochs: int = 20,
-    val_set: list[Sequence[int]] | None = None,
+    val_set: list[Sequence[int] | Sequence[npt.NDArray]] | None = None,
     update_pi: bool = True,
     update_a: bool = True,
     update_b: bool = True,
@@ -193,10 +185,12 @@ def baum_welch(
     fname: str = "ll.eps",
     verbose: bool = False,
 ) -> "HMM":
-    """
-    EM algorithm to update Pi, A, and B for the HMM.
+    """EM algorithm to update Pi, A, and B for the HMM.
 
     Implements the Baum-Welch algorithm from Rabiner (1989).
+
+    Note: For GaussianHMM, update_b=False is required (continuous emission
+    training not yet implemented).
 
     Args:
         hmm: HMM model to train
@@ -213,7 +207,19 @@ def baum_welch(
 
     Returns:
         Trained HMM model
+
+    Raises:
+        ValueError: if GaussianHMM is used with update_b=True
     """
+    # Check if this is a GaussianHMM (doesn't have M attribute)
+    is_gaussian = not hasattr(hmm, "M")
+
+    if is_gaussian and update_b:
+        raise ValueError(
+            "GaussianHMM training with update_b=True is not yet supported. "
+            "Use update_b=False to only update transition matrix and initial distribution."
+        )
+
     import copy
 
     LLs: list[float] = []
@@ -247,7 +253,6 @@ def baum_welch(
             w_k = 1.0
 
             obs_symbols = obs[:]
-            obs_indices = symbol_index(hmm, obs)
 
             gamma_raw = alpha * beta
             gamma = gamma_raw / gamma_raw.sum(0)
@@ -260,7 +265,10 @@ def baum_welch(
             for t in range(T - 1):
                 for i in range(hmm.N):
                     xi[i, :, t] = (
-                        alpha[i, t] * hmm.A[i, :] * hmm.B[:, obs_indices[t + 1]] * beta[:, t + 1]
+                        alpha[i, t]
+                        * hmm.A[i, :]
+                        * hmm.get_emission_probs(obs[t + 1])
+                        * beta[:, t + 1]
                     )
 
                 if not scaling:

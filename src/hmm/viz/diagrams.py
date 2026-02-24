@@ -106,12 +106,13 @@ def plot_gaussian_ellipses(
     cmap = plt.get_cmap("tab10")
     colors = [cmap(i % 10) for i in range(n_states)]
 
+    n_features = means.shape[1] if means.ndim > 1 else 1
+
     for i in range(n_states):
         mean = means[i]
         cov = covariances[i]
 
-        if mean.ndim == 2:
-            # 2D data: draw ellipses
+        if n_features == 2:
             eigenvalues, eigenvectors = np.linalg.eigh(cov)
             angle = np.degrees(np.arctan2(eigenvectors[1, 1], eigenvectors[0, 1]))
             width, height = 2 * n_std * np.sqrt(eigenvalues)
@@ -124,19 +125,21 @@ def plot_gaussian_ellipses(
                 alpha=0.3,
                 edgecolor=colors[i],
                 linewidth=2,
+                label=f"State {i}" if i == 0 else "",
             )
             ax.add_patch(ellipse)
             ax.plot(mean[0], mean[1], "o", color=colors[i], markersize=10)
-        else:
-            # 1D data: plot full Gaussian PDF
+        elif n_features == 1:
             std = float(np.sqrt(np.squeeze(cov)))
-            x = np.linspace(mean[0] - 4 * std, mean[0] + 4 * std, 200)
-            pdf = np.exp(-0.5 * ((x - mean[0]) / std) ** 2) / (std * np.sqrt(2 * np.pi))
-            ax.plot(x, pdf, color=colors[i], linewidth=2, label=f"State {i}")
-            ax.fill_between(x, pdf, alpha=0.2, color=colors[i])
+            mu = float(mean[0])
+            x_vals = np.linspace(mu - 4 * std, mu + 4 * std, 200)
+            pdf = np.exp(-0.5 * ((x_vals - mu) / std) ** 2) / (std * np.sqrt(2 * np.pi))
+            ax.plot(x_vals, pdf, color=colors[i], linewidth=2, label=f"State {i}" if i == 0 else "")
+            ax.fill_between(x_vals, 0, pdf, alpha=0.2, color=colors[i])
+            ax.axvline(mu, color=colors[i], linestyle="--", alpha=0.5)
 
     # Set labels based on dimensionality
-    if mean.ndim == 2:
+    if n_features == 2:
         ax.set_xlabel("Dimension 1")
         ax.set_ylabel("Dimension 2")
     else:
@@ -146,8 +149,7 @@ def plot_gaussian_ellipses(
     ax.set_title("Gaussian Emissions")
     ax.grid(True, alpha=0.3)
 
-    # Only set equal aspect for 2D
-    if mean.ndim == 2:
+    if n_features == 2:
         ax.set_aspect("equal")
 
     ax.legend()
