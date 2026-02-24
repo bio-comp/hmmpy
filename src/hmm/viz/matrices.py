@@ -5,7 +5,6 @@ from typing import Any
 
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
-from matplotlib.figure import Figure
 
 
 def plot_transition_matrix(
@@ -14,7 +13,7 @@ def plot_transition_matrix(
     figsize: tuple[int, int] = (6, 5),
     cmap: str = "Blues",
     **kwargs: Any,
-) -> Figure:
+) -> Any:
     """Plot transition matrix as heatmap.
 
     Args:
@@ -30,7 +29,7 @@ def plot_transition_matrix(
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
-        fig = ax.figure
+        fig = ax.figure  # type: ignore[assignment]
 
     im = ax.imshow(hmm.A, cmap=cmap, vmin=0, vmax=1, **kwargs)
     ax.set_xticks(range(hmm.N))
@@ -46,7 +45,7 @@ def plot_transition_matrix(
             ax.text(j, i, f"{hmm.A[i, j]:.2f}", ha="center", va="center", fontsize=11)
 
     plt.colorbar(im, ax=ax)
-    return fig
+    return fig  # type: ignore[return-value]
 
 
 def plot_emission_matrix(
@@ -55,7 +54,7 @@ def plot_emission_matrix(
     figsize: tuple[int, int] = (8, 5),
     cmap: str = "Greens",
     **kwargs: Any,
-) -> Figure:
+) -> Any:
     """Plot emission matrix as heatmap.
 
     Args:
@@ -71,7 +70,7 @@ def plot_emission_matrix(
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
-        fig = ax.figure
+        fig = ax.figure  # type: ignore[assignment]
 
     im = ax.imshow(hmm.B, cmap=cmap, vmin=0, vmax=1, **kwargs)
     ax.set_xticks(range(hmm.M))
@@ -87,7 +86,7 @@ def plot_emission_matrix(
             ax.text(j, i, f"{hmm.B[i, j]:.2f}", ha="center", va="center", fontsize=10)
 
     plt.colorbar(im, ax=ax)
-    return fig
+    return fig  # type: ignore[return-value]
 
 
 def plot_initial_distribution(
@@ -96,7 +95,7 @@ def plot_initial_distribution(
     figsize: tuple[int, int] = (6, 4),
     colors: Sequence[str] | None = None,
     **kwargs: Any,
-) -> Figure:
+) -> Any:
     """Plot initial state distribution as bar chart.
 
     Args:
@@ -112,11 +111,11 @@ def plot_initial_distribution(
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
-        fig = ax.figure
+        fig = ax.figure  # type: ignore[assignment]
 
     if colors is None:
         cmap = plt.get_cmap("tab10")
-        colors = [cmap(i % 10) for i in range(hmm.N)]
+        colors = [cmap(i % 10) for i in range(hmm.N)]  # type: ignore[misc]
 
     ax.bar(range(hmm.N), hmm.Pi, color=colors, **kwargs)
     ax.set_xticks(range(hmm.N))
@@ -125,14 +124,14 @@ def plot_initial_distribution(
     ax.set_title("Initial State Distribution Pi")
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3)
-    return fig
+    return fig  # type: ignore[return-value]
 
 
 def plot_hmm_matrices(
     hmm: Any,
     figsize: tuple[int, int] = (14, 4),
     **kwargs: Any,
-) -> Figure:
+) -> Any:
     """Plot all HMM matrices in a single figure.
 
     Args:
@@ -148,4 +147,4 @@ def plot_hmm_matrices(
     plot_emission_matrix(hmm, ax=axes[1])
     plot_initial_distribution(hmm, ax=axes[2])
     plt.tight_layout()
-    return fig
+    return fig  # type: ignore[return-value]

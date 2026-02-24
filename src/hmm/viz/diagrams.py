@@ -5,7 +5,7 @@ from typing import Any
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.axes import Axes
-from matplotlib.figure import Figure
+from matplotlib.figure import Figure, SubFigure
 
 
 def plot_state_diagram(
@@ -14,7 +14,7 @@ def plot_state_diagram(
     figsize: tuple[int, int] = (8, 6),
     threshold: float = 0.01,
     **kwargs: Any,
-) -> Figure:
+) -> Figure | SubFigure:
     """Plot HMM as a state diagram with transitions using networkx.
 
     Args:
@@ -28,14 +28,14 @@ def plot_state_diagram(
         matplotlib Figure
     """
     try:
-        import networkx as nx
+        import networkx as nx  # type: ignore[import-untyped]
     except ImportError as e:
         raise ImportError("networkx required for state diagrams: pip install networkx") from e
 
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
-        fig = ax.figure
+        fig = ax.figure  # type: ignore[assignment]
 
     G = nx.DiGraph()
 
@@ -49,7 +49,8 @@ def plot_state_diagram(
 
     pos = nx.circular_layout(G)
 
-    node_colors = plt.cm.Blues(np.linspace(0.3, 0.8, hmm.N))
+    cmap = plt.get_cmap("Blues")
+    node_colors = cmap(np.linspace(0.3, 0.8, hmm.N))
     nx.draw_networkx_nodes(
         G, pos, ax=ax, node_size=1500, node_color=node_colors, edgecolors="black"
     )
@@ -80,7 +81,7 @@ def plot_gaussian_ellipses(
     figsize: tuple[int, int] = (8, 6),
     n_std: float = 2.0,
     **kwargs: Any,
-) -> Figure:
+) -> Figure | SubFigure:
     """Plot covariance ellipses for Gaussian distributions.
 
     Args:
@@ -99,7 +100,7 @@ def plot_gaussian_ellipses(
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
     else:
-        fig = ax.figure
+        fig = ax.figure  # type: ignore[assignment]
 
     n_states = means.shape[0]
     cmap = plt.get_cmap("tab10")
