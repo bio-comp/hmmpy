@@ -24,7 +24,8 @@ def plot_state_probabilities(
         hmm: HMM model
         obs: Observation sequence
         alpha: Forward variables (N x T)
-        beta: Backward variables (optional)
+        beta: Backward variables (N x T). If provided, computes true state
+            probability gamma = alpha * beta / sum(alpha * beta) per Rabiner Eq. 27
         ax: Optional matplotlib axes
         figsize: Figure size (width, height)
         **kwargs: Additional arguments passed to plot
@@ -40,16 +41,29 @@ def plot_state_probabilities(
     T = len(obs)
     t = range(T)
 
-    colors = ["steelblue", "coral", "mediumseagreen", "orchid"][: hmm.N]
+    cmap = plt.get_cmap("tab10")
+    colors = [cmap(i % 10) for i in range(hmm.N)]
+
+    # Compute true state probability if beta is provided (Rabiner Eq. 27)
+    if beta is not None:
+        gamma = alpha * beta
+        gamma = gamma / gamma.sum(0)
+        plot_data = gamma
+        ylabel = "True State Probability (γ)"
+        title_suffix = " - True Probabilities"
+    else:
+        plot_data = alpha
+        ylabel = "Forward Variable (Scaled)"
+        title_suffix = " - Scaled"
 
     for state in range(hmm.N):
         ax.plot(
-            t, alpha[state, :], "-o", color=colors[state], label=f"P(state={state}|O)", **kwargs
+            t, plot_data[state, :], "-o", color=colors[state], label=f"P(state={state}|O)", **kwargs
         )
 
     ax.set_xlabel("Time Step")
-    ax.set_ylabel("State Probability")
-    ax.set_title("Forward State Probabilities Over Time")
+    ax.set_ylabel(ylabel)
+    ax.set_title(f"State Probabilities Over Time{title_suffix}")
     ax.legend()
     ax.grid(True, alpha=0.3)
     ax.set_xticks(t)
@@ -63,6 +77,7 @@ def plot_viterbi_path(
     obs: Sequence[int],
     states: list[int],
     alpha: NDArray,
+    beta: NDArray | None = None,
     ax: Axes | None = None,
     figsize: tuple[int, int] = (10, 5),
     **kwargs: Any,
@@ -74,6 +89,8 @@ def plot_viterbi_path(
         obs: Observation sequence
         states: Decoded state sequence from Viterbi
         alpha: Forward variables (N x T)
+        beta: Backward variables (N x T). If provided, computes true state
+            probability gamma = alpha * beta / sum(alpha * beta) per Rabiner Eq. 27
         ax: Optional matplotlib axes
         figsize: Figure size (width, height)
         **kwargs: Additional arguments passed to plot
@@ -89,19 +106,32 @@ def plot_viterbi_path(
     T = len(obs)
     t = range(T)
 
-    colors = ["steelblue", "coral", "mediumseagreen", "orchid"][: hmm.N]
+    cmap = plt.get_cmap("tab10")
+    colors = [cmap(i % 10) for i in range(hmm.N)]
+
+    # Compute true state probability if beta is provided (Rabiner Eq. 27)
+    if beta is not None:
+        gamma = alpha * beta
+        gamma = gamma / gamma.sum(0)
+        plot_data = gamma
+        ylabel = "True State Probability (γ)"
+        title_suffix = " - True Probabilities"
+    else:
+        plot_data = alpha
+        ylabel = "Forward Variable (Scaled)"
+        title_suffix = " - Scaled"
 
     for state in range(hmm.N):
-        ax.fill_between(t, 0, alpha[state, :], alpha=0.2, color=colors[state])
-        ax.plot(t, alpha[state, :], "-o", color=colors[state], label=f"State {state}", **kwargs)
+        ax.fill_between(t, 0, plot_data[state, :], alpha=0.2, color=colors[state])
+        ax.plot(t, plot_data[state, :], "-o", color=colors[state], label=f"State {state}", **kwargs)
 
     for i, s in enumerate(states):
         ax.axvline(i, color=colors[s], linestyle="--", alpha=0.5)
-        ax.plot(i, alpha[s, i], "ko", markersize=10)
+        ax.plot(i, plot_data[s, i], "ko", markersize=10)
 
     ax.set_xlabel("Time Step")
-    ax.set_ylabel("State Probability")
-    ax.set_title("Viterbi Path Decoding")
+    ax.set_ylabel(ylabel)
+    ax.set_title(f"Viterbi Path Decoding{title_suffix}")
     ax.legend()
     ax.set_xticks(t)
     ax.set_xticklabels([f"{obs[i]}\n(S{states[i]})" for i in t])
