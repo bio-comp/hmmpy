@@ -115,7 +115,8 @@ def plot_initial_distribution(
         fig = ax.figure
 
     if colors is None:
-        colors = ["steelblue", "coral", "mediumseagreen", "orchid"][: hmm.N]
+        cmap = plt.get_cmap("tab10")
+        colors = [cmap(i % 10) for i in range(hmm.N)]
 
     ax.bar(range(hmm.N), hmm.Pi, color=colors, **kwargs)
     ax.set_xticks(range(hmm.N))

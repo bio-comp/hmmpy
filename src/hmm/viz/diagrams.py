@@ -102,36 +102,52 @@ def plot_gaussian_ellipses(
         fig = ax.figure
 
     n_states = means.shape[0]
-    colors = ["steelblue", "coral", "mediumseagreen", "orchid"][:n_states]
+    cmap = plt.get_cmap("tab10")
+    colors = [cmap(i % 10) for i in range(n_states)]
 
     for i in range(n_states):
         mean = means[i]
         cov = covariances[i]
 
-        if mean.ndim == 1:
-            if mean.shape[0] == 2:
-                eigenvalues, eigenvectors = np.linalg.eigh(cov)
-                angle = np.degrees(np.arctan2(eigenvectors[1, 1], eigenvectors[0, 1]))
-                width, height = 2 * n_std * np.sqrt(eigenvalues)
-                ellipse = Ellipse(
-                    xy=mean,
-                    width=width,
-                    height=height,
-                    angle=angle,
-                    facecolor=colors[i],
-                    alpha=0.3,
-                    edgecolor=colors[i],
-                    linewidth=2,
-                )
-                ax.add_patch(ellipse)
-                ax.plot(mean[0], mean[1], "o", color=colors[i], markersize=10)
+        if mean.ndim == 2:
+            # 2D data: draw ellipses
+            eigenvalues, eigenvectors = np.linalg.eigh(cov)
+            angle = np.degrees(np.arctan2(eigenvectors[1, 1], eigenvectors[0, 1]))
+            width, height = 2 * n_std * np.sqrt(eigenvalues)
+            ellipse = Ellipse(
+                xy=mean,
+                width=width,
+                height=height,
+                angle=angle,
+                facecolor=colors[i],
+                alpha=0.3,
+                edgecolor=colors[i],
+                linewidth=2,
+            )
+            ax.add_patch(ellipse)
+            ax.plot(mean[0], mean[1], "o", color=colors[i], markersize=10)
         else:
-            ax.axvline(mean[0], color=colors[i], linestyle="--", alpha=0.5)
+            # 1D data: plot full Gaussian PDF
+            std = float(np.sqrt(np.squeeze(cov)))
+            x = np.linspace(mean[0] - 4 * std, mean[0] + 4 * std, 200)
+            pdf = np.exp(-0.5 * ((x - mean[0]) / std) ** 2) / (std * np.sqrt(2 * np.pi))
+            ax.plot(x, pdf, color=colors[i], linewidth=2, label=f"State {i}")
+            ax.fill_between(x, pdf, alpha=0.2, color=colors[i])
 
-    ax.set_xlabel("Dimension 1")
-    ax.set_ylabel("Dimension 2")
-    ax.set_title("Gaussian Ellipses")
+    # Set labels based on dimensionality
+    if mean.ndim == 2:
+        ax.set_xlabel("Dimension 1")
+        ax.set_ylabel("Dimension 2")
+    else:
+        ax.set_xlabel("Observation Value")
+        ax.set_ylabel("Probability Density")
+
+    ax.set_title("Gaussian Emissions")
     ax.grid(True, alpha=0.3)
-    ax.set_aspect("equal")
 
+    # Only set equal aspect for 2D
+    if mean.ndim == 2:
+        ax.set_aspect("equal")
+
+    ax.legend()
     return fig
