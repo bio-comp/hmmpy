@@ -180,13 +180,6 @@ class HMM:
         else:
             self.Labels = list(range(self.N))
 
-        if F is not None:
-            self.F = dict(F)
-            for i in self.F.keys():
-                self.B[i, :] = self.F[i]
-        else:
-            self.F = {}
-
     def __repr__(self) -> str:
         retn = ""
         retn += f"num hiddens: {self.N}\n"

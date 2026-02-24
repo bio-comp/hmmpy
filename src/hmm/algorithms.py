@@ -190,7 +190,6 @@ def baum_welch(
     update_b: bool = True,
     scaling: bool = True,
     graph: bool = False,
-    norm_update: bool = False,
     fname: str = "ll.eps",
     verbose: bool = False,
 ) -> "HMM":
@@ -209,7 +208,6 @@ def baum_welch(
         update_b: flag to update observation emission probabilities (default: True)
         scaling: flag to scale probabilities (default: True, recommended)
         graph: flag to plot log-likelihoods (default: False)
-        norm_update: flag to use normalized update weights (default: False)
         fname: file name to save plot figure (default: "ll.eps")
         verbose: flag to print training progress (default: False)
 
@@ -246,10 +244,7 @@ def baum_welch(
             LL_epoch += log_prob_obs
             T = len(obs)
 
-            if norm_update:
-                w_k = 1.0 / -(log_prob_obs + np.log(len(obs)))
-            else:
-                w_k = 1.0
+            w_k = 1.0
 
             obs_symbols = obs[:]
             obs_indices = symbol_index(hmm, obs)
@@ -318,7 +313,7 @@ def baum_welch(
                 val_LL_epoch += forward(hmm=hmm, obs=val_obs, scaling=True)[0]
             val_LLs.append(val_LL_epoch)
 
-            if val_LL_epoch > (best_val_LL or float("-inf")):
+            if best_val_LL is None or val_LL_epoch > best_val_LL:
                 best_A = copy.deepcopy(hmm.A)
                 best_B = copy.deepcopy(hmm.B)
                 best_Pi = copy.deepcopy(hmm.Pi)
@@ -329,6 +324,8 @@ def baum_welch(
             print(f"Finished epoch {epoch + 1}, LL: {LL_epoch}")
             if val_set is not None:
                 print(f"  Validation LL: {val_LLs[epoch]}")
+                if epoch == best_epoch:
+                    print(f"  -> New best validation at epoch {epoch + 1}")
 
     if graph:
         import pylab  # type: ignore[import-untyped]
