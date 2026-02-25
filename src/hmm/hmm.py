@@ -1,5 +1,7 @@
 """HMM model implementation."""
 
+from __future__ import annotations
+
 from collections.abc import Mapping, Sequence
 
 import numpy as np
@@ -18,8 +20,8 @@ class HMMClassifier:
 
     def __init__(
         self,
-        neg_hmm: "HMM | None" = None,
-        pos_hmm: "HMM | None" = None,
+        neg_hmm: HMM | None = None,
+        pos_hmm: HMM | None = None,
     ) -> None:
         """
         Args:
@@ -57,7 +59,7 @@ class HMMClassifier:
 
         return pos_ll - neg_ll
 
-    def add_pos_hmm(self, pos_hmm: "HMM") -> None:
+    def add_pos_hmm(self, pos_hmm: HMM) -> None:
         """
         Add the hmm corresponding to positive
         activity.  Replaces current positive hmm, if it exists.
@@ -67,7 +69,7 @@ class HMMClassifier:
         """
         self.pos_hmm = pos_hmm
 
-    def add_neg_hmm(self, neg_hmm: "HMM") -> None:
+    def add_neg_hmm(self, neg_hmm: HMM) -> None:
         """
         Add the hmm corresponding to negative
         activity.  Replaces current negative hmm, if it exists.

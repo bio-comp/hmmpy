@@ -1,5 +1,7 @@
 """HMM algorithms: forward, backward, viterbi, baum_welch."""
 
+from __future__ import annotations
+
 import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
@@ -15,7 +17,7 @@ if TYPE_CHECKING:
     AnyHMM = HMM | GaussianHMM | MixtureGaussianHMM
 
 
-def symbol_index(hmm: "HMM", obs: Sequence[int]) -> list[int]:
+def symbol_index(hmm: HMM, obs: Sequence[int]) -> list[int]:
     """
     Converts an observation symbol sequence into a sequence
     of indices for accessing distribution matrices.
@@ -38,7 +40,7 @@ def symbol_index(hmm: "HMM", obs: Sequence[int]) -> list[int]:
 
 
 def forward(
-    hmm: "AnyHMM",
+    hmm: AnyHMM,
     obs: Sequence[int] | Sequence[npt.NDArray],
     scaling: bool = True,
 ) -> tuple[float, npt.NDArray, npt.NDArray] | tuple[float, npt.NDArray]:
@@ -91,7 +93,7 @@ def forward(
 
 
 def backward(
-    hmm: "AnyHMM",
+    hmm: AnyHMM,
     obs: Sequence[int] | Sequence[npt.NDArray],
     c: npt.NDArray | None = None,
 ) -> npt.NDArray:
@@ -135,7 +137,7 @@ def backward(
 
 
 def viterbi(
-    hmm: "AnyHMM",
+    hmm: AnyHMM,
     obs: Sequence[int] | Sequence[npt.NDArray],
     scaling: bool = True,
 ) -> tuple[list[int], npt.NDArray, npt.NDArray]:
@@ -189,7 +191,7 @@ def viterbi(
 
 
 def baum_welch(
-    hmm: "AnyHMM",
+    hmm: AnyHMM,
     obs_seqs: list[Sequence[int] | Sequence[npt.NDArray]],
     epochs: int = 20,
     val_set: list[Sequence[int] | Sequence[npt.NDArray]] | None = None,
@@ -201,7 +203,7 @@ def baum_welch(
     fname: str = "ll.eps",
     verbose: bool = False,
     reg_covar: float | None = None,
-) -> "HMM":
+) -> HMM:
     """EM algorithm to update Pi, A, and B for the HMM.
 
     Implements the Baum-Welch algorithm from Rabiner (1989).
