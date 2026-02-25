@@ -6,6 +6,8 @@ import numpy as np
 import numpy.typing as npt
 from numpy import random as rand
 
+from hmm.algorithms import forward
+
 
 class HMMClassifier:
     """
@@ -49,7 +51,6 @@ class HMMClassifier:
 
         pos_hmm = self.pos_hmm
         neg_hmm = self.neg_hmm
-        from hmm.algorithms import forward
 
         pos_ll = forward(pos_hmm, sample, scaling=True)[0]
         neg_ll = forward(neg_hmm, sample, scaling=True)[0]
@@ -200,25 +201,3 @@ class HMM:
         retn += f"\nA:\n {self.A}\n"
         retn += f"Pi:\n {self.Pi}"
         return retn
-
-
-def symbol_index(hmm: HMM, obs: Sequence[int]) -> list[int]:
-    """
-    Converts an observation symbol sequence into a sequence
-    of indices for accessing distribution matrices.
-
-    Args:
-        hmm: the HMM model
-        obs: observation sequence
-
-    Returns:
-        List of indices corresponding to observation symbols
-
-    Raises:
-        KeyError: if an observation symbol is not in the model's symbol map
-    """
-    obs_ind = []
-    for o in obs:
-        obs_ind.append(hmm.symbol_map[o])
-
-    return obs_ind
