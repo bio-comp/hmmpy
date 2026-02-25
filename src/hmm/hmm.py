@@ -137,7 +137,7 @@ class HMM:
 
         self.V = list(V)
         self.M = len(self.V)
-        self.symbol_map = dict(zip(self.V, range(len(self.V))))
+        self.symbol_map: dict[int, int] = {v: i for i, v in enumerate(self.V)}
 
         if A is not None:
             self.A = np.array(A, dtype=float)
@@ -157,7 +157,7 @@ class HMM:
 
             if F is not None:
                 self.F = dict(F)
-                for i in self.F.keys():
+                for i in self.F:
                     self.B[i, :] = self.F[i]
             else:
                 self.F = {}
@@ -167,7 +167,7 @@ class HMM:
 
             if F is not None:
                 self.F = dict(F)
-                for i in self.F.keys():
+                for i in self.F:
                     self.B[i, :] = self.F[i]
             else:
                 self.F = {}
@@ -176,7 +176,7 @@ class HMM:
             self.Pi = np.array(Pi, dtype=float)
             assert len(self.Pi) == self.N
         else:
-            self.Pi = np.array(1.0 / self.N).repeat(self.N)
+            self.Pi = np.array(1 / self.N).repeat(self.N)
 
         if Labels is not None:
             self.Labels = list(Labels)

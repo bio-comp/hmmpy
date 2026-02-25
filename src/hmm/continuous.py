@@ -96,7 +96,7 @@ class GaussianHMM:
             self.Pi = np.array(Pi, dtype=float)
             assert len(self.Pi) == self.N
         else:
-            self.Pi = np.array(1.0 / self.N).repeat(self.N)
+            self.Pi = np.array(1 / self.N).repeat(self.N)
 
         # Initialize Continuous Emission Parameters (means and covariances)
         if means is not None:
@@ -216,7 +216,7 @@ class MixtureGaussianHMM:
             self.Pi = np.array(Pi, dtype=float)
             assert len(self.Pi) == self.N
         else:
-            self.Pi = np.array(1.0 / self.N).repeat(self.N)
+            self.Pi = np.array(1 / self.N).repeat(self.N)
 
         if weights is not None:
             self.weights = np.array(weights, dtype=float)
