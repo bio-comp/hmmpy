@@ -3,11 +3,12 @@
 
 format: jb-book
 root: notebooks/01-introduction
+title: 1. Introduction to Hidden Markov Models
 chapters:
   - file: notebooks/02-forward-algorithm
     title: 2. Forward Algorithm
   - file: notebooks/03-viterbi-algorithm
-    title: 3. Viterbi Algorithm
+    title: 3. Basic Viterbi Decoding
   - file: notebooks/04-baum-welch
     title: 4. Baum-Welch Training
   - file: notebooks/06-continuous-hmm
