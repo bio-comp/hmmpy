@@ -190,6 +190,7 @@ def baum_welch(
     graph: bool = False,
     fname: str = "ll.eps",
     verbose: bool = False,
+    reg_covar: float | None = None,
 ) -> "HMM":
     """EM algorithm to update Pi, A, and B for the HMM.
 
@@ -210,10 +211,14 @@ def baum_welch(
         graph: flag to plot log-likelihoods (default: False)
         fname: file name to save plot figure (default: "ll.eps")
         verbose: flag to print training progress (default: False)
+        reg_covar: covariance regularization constant (default: from hmm.reg_covar or 1e-6)
 
     Returns:
         Trained HMM model
     """
+    # Use reg_covar from hmm if not provided
+    if reg_covar is None:
+        reg_covar = getattr(hmm, "reg_covar", 1e-6)
     # Check if this is a GaussianHMM (doesn't have M attribute)
     is_gaussian = not hasattr(hmm, "M")
 
@@ -379,21 +384,25 @@ def baum_welch(
                             if expect_mix_sum[j, k] > 0:
                                 hmm.means[j, k] = expect_obs_sum[j, k] / expect_mix_sum[j, k]
 
-                    # Update covariances (Rabiner Eq. 54)
+                    # Update covariances (Rabiner Eq. 54) with regularization
                     for j in range(hmm.N):
                         for k in range(hmm.n_mixtures):
                             if expect_mix_sum[j, k] > 0:
-                                hmm.covars[j, k] = expect_obs_cov[j, k] / expect_mix_sum[j, k]
+                                hmm.covars[j, k] = (expect_obs_cov[j, k] / expect_mix_sum[j, k]) + (
+                                    reg_covar * np.eye(hmm.n_features)
+                                )
                 else:
                     # Single Gaussian case - Update means (Rabiner Eq. 53)
                     for j in range(hmm.N):
                         if expect_si_all[j] > 0:
                             hmm.means[j] = expect_obs_sum[j] / expect_si_all[j]
 
-                    # Update covariances (Rabiner Eq. 54)
+                    # Update covariances (Rabiner Eq. 54) with regularization
                     for j in range(hmm.N):
                         if expect_si_all[j] > 0:
-                            hmm.covars[j] = expect_obs_cov[j] / expect_si_all[j]
+                            hmm.covars[j] = (expect_obs_cov[j] / expect_si_all[j]) + (
+                                reg_covar * np.eye(hmm.n_features)
+                            )
             else:
                 # Discrete B matrix update
                 for i in range(hmm.N):

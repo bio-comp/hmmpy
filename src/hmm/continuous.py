@@ -29,6 +29,7 @@ class GaussianHMM:
         means: npt.NDArray | None = None,
         covars: npt.NDArray | None = None,
         Labels: list[int] | None = None,
+        reg_covar: float = 1e-6,
     ) -> None:
         """Initialize a Continuous HMM with Gaussian emissions.
 
@@ -40,9 +41,11 @@ class GaussianHMM:
             means: Mean vectors (N x n_features)
             covars: Covariance matrices (N x n_features x n_features)
             Labels: State labels
+            reg_covar: Regularization constant added to covariance matrices to prevent singularity
         """
         self.N = n_states
         self.n_features = n_features
+        self.reg_covar = reg_covar
 
         # Initialize Transition Matrix A
         if A is not None:
@@ -96,13 +99,16 @@ class GaussianHMM:
         d = self.n_features
         diff = np.asarray(obs) - np.asarray(mu)
 
+        # Add regularization to prevent singular covariance
+        reg_cov = cov + (self.reg_covar * np.eye(d))
+
         if d == 1:
             diff_scalar = float(np.squeeze(diff))
-            var = float(np.squeeze(cov))
+            var = float(np.squeeze(reg_cov))
             return float(np.exp(-0.5 * (diff_scalar**2) / var) / np.sqrt(2 * np.pi * var))
         else:
-            cov_inv = np.linalg.inv(cov)
-            det_cov = np.linalg.det(cov)
+            cov_inv = np.linalg.inv(reg_cov)
+            det_cov = np.linalg.det(reg_cov)
             exponent = -0.5 * np.dot(np.dot(diff.T, cov_inv), diff)
             return float(np.exp(exponent) / np.sqrt(((2 * np.pi) ** d) * det_cov))
 
@@ -158,6 +164,7 @@ class MixtureGaussianHMM:
         means: npt.NDArray | None = None,
         covars: npt.NDArray | None = None,
         Labels: list[int] | None = None,
+        reg_covar: float = 1e-6,
     ) -> None:
         """Initialize a Mixture Gaussian HMM.
 
@@ -171,10 +178,12 @@ class MixtureGaussianHMM:
             means: Mean vectors (N x n_mixtures x n_features)
             covars: Covariance matrices (N x n_mixtures x n_features x n_features)
             Labels: State labels
+            reg_covar: Regularization constant added to covariance matrices to prevent singularity
         """
         self.N = n_states
         self.n_features = n_features
         self.n_mixtures = n_mixtures
+        self.reg_covar = reg_covar
 
         if A is not None:
             self.A = np.array(A, dtype=float)
@@ -234,13 +243,16 @@ class MixtureGaussianHMM:
         d = self.n_features
         diff = np.asarray(obs) - np.asarray(mean)
 
+        # Add regularization to prevent singular covariance
+        reg_cov = cov + (self.reg_covar * np.eye(d))
+
         if d == 1:
             diff_scalar = float(np.squeeze(diff))
-            var = float(np.squeeze(cov))
+            var = float(np.squeeze(reg_cov))
             return float(np.exp(-0.5 * (diff_scalar**2) / var) / np.sqrt(2 * np.pi * var))
         else:
-            cov_inv = np.linalg.inv(cov)
-            det_cov = np.linalg.det(cov)
+            cov_inv = np.linalg.inv(reg_cov)
+            det_cov = np.linalg.det(reg_cov)
             exponent = -0.5 * np.dot(np.dot(diff.T, cov_inv), diff)
             return float(np.exp(exponent) / np.sqrt(((2 * np.pi) ** d) * det_cov))
 
