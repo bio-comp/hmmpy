@@ -8,7 +8,10 @@ import numpy.typing as npt
 from einops import rearrange
 
 if TYPE_CHECKING:
+    from hmm.continuous import GaussianHMM, MixtureGaussianHMM
     from hmm.hmm import HMM
+
+    AnyHMM = HMM | GaussianHMM | MixtureGaussianHMM
 
 
 def symbol_index(hmm: "HMM", obs: Sequence[int]) -> list[int]:
@@ -34,7 +37,7 @@ def symbol_index(hmm: "HMM", obs: Sequence[int]) -> list[int]:
 
 
 def forward(
-    hmm: "HMM",
+    hmm: "AnyHMM",
     obs: Sequence[int] | Sequence[npt.NDArray],
     scaling: bool = True,
 ) -> tuple[float, npt.NDArray, npt.NDArray] | tuple[float, npt.NDArray]:
@@ -87,7 +90,7 @@ def forward(
 
 
 def backward(
-    hmm: "HMM",
+    hmm: "AnyHMM",
     obs: Sequence[int] | Sequence[npt.NDArray],
     c: npt.NDArray | None = None,
 ) -> npt.NDArray:
@@ -122,7 +125,7 @@ def backward(
 
 
 def viterbi(
-    hmm: "HMM",
+    hmm: "AnyHMM",
     obs: Sequence[int] | Sequence[npt.NDArray],
     scaling: bool = True,
 ) -> tuple[list[int], npt.NDArray, npt.NDArray]:
@@ -176,7 +179,7 @@ def viterbi(
 
 
 def baum_welch(
-    hmm: "HMM",
+    hmm: "AnyHMM",
     obs_seqs: list[Sequence[int] | Sequence[npt.NDArray]],
     epochs: int = 20,
     val_set: list[Sequence[int] | Sequence[npt.NDArray]] | None = None,

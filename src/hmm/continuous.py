@@ -79,7 +79,7 @@ class GaussianHMM:
         else:
             self.Labels = list(range(self.N))
 
-    def emission_prob(self, state: int, obs: npt.NDArray) -> float:
+    def emission_prob(self, state: int, obs: int | npt.NDArray) -> float:
         """Calculate b_j(O) = N(O, mu_j, U_j).
 
         Returns the probability density of observation vector 'obs' given 'state'.
@@ -106,7 +106,7 @@ class GaussianHMM:
             exponent = -0.5 * np.dot(np.dot(diff.T, cov_inv), diff)
             return float(np.exp(exponent) / np.sqrt(((2 * np.pi) ** d) * det_cov))
 
-    def get_emission_probs(self, obs_t: npt.NDArray) -> npt.NDArray:
+    def get_emission_probs(self, obs_t: int | npt.NDArray) -> npt.NDArray:
         """Returns emission probabilities for all states given observation obs_t.
 
         Args:
@@ -244,7 +244,7 @@ class MixtureGaussianHMM:
             exponent = -0.5 * np.dot(np.dot(diff.T, cov_inv), diff)
             return float(np.exp(exponent) / np.sqrt(((2 * np.pi) ** d) * det_cov))
 
-    def emission_prob(self, state: int, obs: npt.NDArray) -> float:
+    def emission_prob(self, state: int, obs: int | npt.NDArray) -> float:
         """Calculate b_j(O) = sum_k c_jk * N(O, mu_jk, U_jk).
 
         Returns the probability density of observation vector 'obs' given 'state'
@@ -265,7 +265,7 @@ class MixtureGaussianHMM:
             density += c_jk * self._gaussian_pdf(mu_jk, cov_jk, obs)
         return density
 
-    def get_emission_probs(self, obs_t: npt.NDArray) -> npt.NDArray:
+    def get_emission_probs(self, obs_t: int | npt.NDArray) -> npt.NDArray:
         """Returns emission probabilities for all states given observation obs_t.
 
         Args:

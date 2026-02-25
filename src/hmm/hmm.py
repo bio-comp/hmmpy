@@ -180,15 +180,17 @@ class HMM:
         else:
             self.Labels = list(range(self.N))
 
-    def get_emission_probs(self, obs_t: int) -> npt.NDArray:
+    def get_emission_probs(self, obs_t: int | npt.NDArray) -> npt.NDArray:
         """Returns emission probabilities for all states given observation obs_t.
 
         Args:
-            obs_t: Observation symbol (must be in V)
+            obs_t: Observation symbol (must be in V) or array for continuous
 
         Returns:
             Array of shape (N,) with emission probabilities for each state
         """
+        if not isinstance(obs_t, int):
+            obs_t = int(np.squeeze(obs_t))
         return self.B[:, self.symbol_map[obs_t]]
 
     def __repr__(self) -> str:
