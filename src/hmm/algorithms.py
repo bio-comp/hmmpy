@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
@@ -236,8 +237,6 @@ def baum_welch(
     # Check if this is a GaussianHMM (doesn't have M attribute)
     is_gaussian = not hasattr(hmm, "M")
 
-    import copy
-
     LLs: list[float] = []
     val_LLs: list[float] = []
     best_A = copy.deepcopy(hmm.A)
@@ -412,7 +411,7 @@ def baum_welch(
 
                 hmm.B = expect_si_vk_all
 
-                for i in hmm.F.keys():
+                for i in hmm.F:
                     hmm.B[i, :] = hmm.F[i]
 
         LLs.append(LL_epoch)
