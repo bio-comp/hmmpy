@@ -10,5 +10,7 @@ chapters:
     title: 3. Viterbi Algorithm
   - file: notebooks/04-baum-welch
     title: 4. Baum-Welch Training
+  - file: notebooks/06-continuous-hmm
+    title: 5. Continuous HMMs
   - file: notebooks/05-applications
-    title: 5. Applications
+    title: 6. Applications
