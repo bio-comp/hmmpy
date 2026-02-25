@@ -220,10 +220,16 @@ def baum_welch(
     best_epoch = -1
     best_val_LL = float("-inf") if val_set is not None else None
 
+    # Check if this is a MixtureGaussianHMM (has n_mixtures attribute)
+    is_mixture = hasattr(hmm, "n_mixtures") and hmm.n_mixtures > 1
+    is_continuous = is_gaussian  # Both GaussianHMM and MixtureGaussianHMM are continuous
+
     # For GaussianHMM: store best means and covariances for validation
-    if is_gaussian:
+    if is_continuous:
         best_means = copy.deepcopy(hmm.means)
         best_covars = copy.deepcopy(hmm.covars)
+        if is_mixture:
+            best_weights = copy.deepcopy(hmm.weights)
     else:
         best_B = copy.deepcopy(hmm.B)
 
@@ -236,9 +242,16 @@ def baum_welch(
         expect_si_t0_all = np.zeros(hmm.N, dtype=float)
 
         # For GaussianHMM: accumulators for means and covariances
-        if is_gaussian:
-            expect_obs_sum = np.zeros([hmm.N, hmm.n_features], dtype=float)
-            expect_obs_cov = np.zeros([hmm.N, hmm.n_features, hmm.n_features], dtype=float)
+        if is_continuous:
+            if is_mixture:
+                expect_mix_sum = np.zeros([hmm.N, hmm.n_mixtures], dtype=float)
+                expect_obs_sum = np.zeros([hmm.N, hmm.n_mixtures, hmm.n_features], dtype=float)
+                expect_obs_cov = np.zeros(
+                    [hmm.N, hmm.n_mixtures, hmm.n_features, hmm.n_features], dtype=float
+                )
+            else:
+                expect_obs_sum = np.zeros([hmm.N, hmm.n_features], dtype=float)
+                expect_obs_cov = np.zeros([hmm.N, hmm.n_features, hmm.n_features], dtype=float)
         else:
             expect_si_vk_all = np.zeros([hmm.N, hmm.M], dtype=float)
 
@@ -281,14 +294,59 @@ def baum_welch(
             expect_si_sj_all_TM1 += w_k * xi[:, :, : T - 1].sum(2)
 
             if update_b:
-                if is_gaussian:
-                    # Accumulate weighted observations for means/covariances update
+                if is_continuous:
+                    # For continuous HMM: accumulate weighted observations
+                    # gamma_jk_t = gamma[j,t] * c_jk * N(O_t | mu_jk, sigma_jk) / b_j(O_t)
                     for t in range(T):
                         obs_t = np.asarray(obs[t])
-                        for j in range(hmm.N):
-                            expect_obs_sum[j] += gamma[j, t] * obs_t
-                            diff = obs_t - hmm.means[j]
-                            expect_obs_cov[j] += gamma[j, t] * np.outer(diff, diff)
+                        b_j = hmm.get_emission_probs(obs_t)
+
+                        if is_mixture:
+                            # Mixture Gaussian case
+                            for j in range(hmm.N):
+                                for k in range(hmm.n_mixtures):
+                                    c_jk = hmm.weights[j, k]
+                                    mu_jk = hmm.means[j, k]
+                                    sigma_jk = hmm.covars[j, k]
+
+                                    # Gaussian PDF for this mixture component
+                                    diff = np.asarray(obs_t) - np.asarray(mu_jk)
+                                    if hmm.n_features == 1:
+                                        diff_scalar = float(diff.flatten()[0])
+                                        sigma_jk_arr = np.asarray(sigma_jk).flatten()
+                                        var = float(sigma_jk_arr[0])
+                                        pdf = np.exp(-0.5 * (diff_scalar**2) / var) / np.sqrt(
+                                            2 * np.pi * var
+                                        )
+                                    else:
+                                        cov_inv = np.linalg.inv(sigma_jk)
+                                        det_cov = np.linalg.det(sigma_jk)
+                                        exponent = -0.5 * np.dot(np.dot(diff.T, cov_inv), diff)
+                                        pdf = np.exp(exponent) / np.sqrt(
+                                            ((2 * np.pi) ** hmm.n_features) * det_cov
+                                        )
+                                    cov_inv = np.linalg.inv(sigma_jk)
+                                    det_cov = np.linalg.det(sigma_jk)
+                                    exponent = -0.5 * np.dot(np.dot(diff.T, cov_inv), diff)
+                                    pdf = np.exp(exponent) / np.sqrt(
+                                        ((2 * np.pi) ** hmm.n_features) * det_cov
+                                    )
+
+                                if b_j[j] > 0:
+                                    gamma_jk = gamma[j, t] * c_jk * pdf / b_j[j]
+                                else:
+                                    gamma_jk = 0.0
+
+                                expect_mix_sum[j, k] += gamma_jk
+                                expect_obs_sum[j, k] += gamma_jk * obs_t
+                                diff_outer = np.outer(diff, diff)
+                                expect_obs_cov[j, k] += gamma_jk * diff_outer
+                        else:
+                            # Single Gaussian case
+                            for j in range(hmm.N):
+                                expect_obs_sum[j] += gamma[j, t] * obs_t
+                                diff = obs_t - hmm.means[j]
+                                expect_obs_cov[j] += gamma[j, t] * np.outer(diff, diff)
                 else:
                     # Discrete B matrix update
                     B_bar = np.zeros([hmm.N, hmm.M], dtype=float)
@@ -309,16 +367,34 @@ def baum_welch(
             hmm.A = A_bar
 
         if update_b:
-            if is_gaussian:
-                # Update means (Rabiner Eq. 53)
-                for j in range(hmm.N):
-                    if expect_si_all[j] > 0:
-                        hmm.means[j] = expect_obs_sum[j] / expect_si_all[j]
+            if is_continuous:
+                if is_mixture:
+                    # Update mixture weights (Rabiner Eq. 52)
+                    for j in range(hmm.N):
+                        if expect_si_all[j] > 0:
+                            hmm.weights[j, :] = expect_mix_sum[j, :] / expect_si_all[j]
 
-                # Update covariances (Rabiner Eq. 54)
-                for j in range(hmm.N):
-                    if expect_si_all[j] > 0:
-                        hmm.covars[j] = expect_obs_cov[j] / expect_si_all[j]
+                    # Update means (Rabiner Eq. 53)
+                    for j in range(hmm.N):
+                        for k in range(hmm.n_mixtures):
+                            if expect_mix_sum[j, k] > 0:
+                                hmm.means[j, k] = expect_obs_sum[j, k] / expect_mix_sum[j, k]
+
+                    # Update covariances (Rabiner Eq. 54)
+                    for j in range(hmm.N):
+                        for k in range(hmm.n_mixtures):
+                            if expect_mix_sum[j, k] > 0:
+                                hmm.covars[j, k] = expect_obs_cov[j, k] / expect_mix_sum[j, k]
+                else:
+                    # Single Gaussian case - Update means (Rabiner Eq. 53)
+                    for j in range(hmm.N):
+                        if expect_si_all[j] > 0:
+                            hmm.means[j] = expect_obs_sum[j] / expect_si_all[j]
+
+                    # Update covariances (Rabiner Eq. 54)
+                    for j in range(hmm.N):
+                        if expect_si_all[j] > 0:
+                            hmm.covars[j] = expect_obs_cov[j] / expect_si_all[j]
             else:
                 # Discrete B matrix update
                 for i in range(hmm.N):
@@ -348,9 +424,11 @@ def baum_welch(
             if best_val_LL is None or val_LL_epoch > best_val_LL:
                 best_A = copy.deepcopy(hmm.A)
                 best_Pi = copy.deepcopy(hmm.Pi)
-                if is_gaussian:
+                if is_continuous:
                     best_means = copy.deepcopy(hmm.means)
                     best_covars = copy.deepcopy(hmm.covars)
+                    if is_mixture:
+                        best_weights = copy.deepcopy(hmm.weights)
                 else:
                     best_B = copy.deepcopy(hmm.B)
                 best_epoch = epoch
@@ -395,6 +473,10 @@ def baum_welch(
         hmm.Pi = best_Pi
         if hasattr(hmm, "B"):
             hmm.B = best_B
+        elif hasattr(hmm, "weights"):
+            hmm.means = best_means
+            hmm.covars = best_covars
+            hmm.weights = best_weights
         else:
             hmm.means = best_means
             hmm.covars = best_covars
