@@ -10,6 +10,8 @@ import numpy as np
 import numpy.typing as npt
 from einops import rearrange
 
+from hmm.continuous import gaussian_pdf
+
 if TYPE_CHECKING:
     from hmm.continuous import GaussianHMM, MixtureGaussianHMM
     from hmm.hmm import HMM
@@ -333,30 +335,17 @@ def baum_welch(
                                     sigma_jk = hmm.covars[j, k]
 
                                     # Gaussian PDF for this mixture component
-                                    diff = np.asarray(obs_t) - np.asarray(mu_jk)
-                                    if hmm.n_features == 1:
-                                        diff_scalar = float(diff.flatten()[0])
-                                        sigma_jk_arr = np.asarray(sigma_jk).flatten()
-                                        var = float(sigma_jk_arr[0])
-                                        pdf = np.exp(-0.5 * (diff_scalar**2) / var) / np.sqrt(
-                                            2 * np.pi * var
-                                        )
+                                    pdf = gaussian_pdf(obs_t, mu_jk, sigma_jk, reg_covar)
+                                    if b_j[j] > 0:
+                                        gamma_jk = gamma[j, t] * c_jk * pdf / b_j[j]
                                     else:
-                                        cov_inv = np.linalg.inv(sigma_jk)
-                                        det_cov = np.linalg.det(sigma_jk)
-                                        exponent = -0.5 * np.dot(np.dot(diff.T, cov_inv), diff)
-                                        pdf = np.exp(exponent) / np.sqrt(
-                                            ((2 * np.pi) ** hmm.n_features) * det_cov
-                                        )
-                                if b_j[j] > 0:
-                                    gamma_jk = gamma[j, t] * c_jk * pdf / b_j[j]
-                                else:
-                                    gamma_jk = 0.0
+                                        gamma_jk = 0.0
 
-                                expect_mix_sum[j, k] += gamma_jk
-                                expect_obs_sum[j, k] += gamma_jk * obs_t
-                                diff_outer = np.outer(diff, diff)
-                                expect_obs_cov[j, k] += gamma_jk * diff_outer
+                                    expect_mix_sum[j, k] += gamma_jk
+                                    expect_obs_sum[j, k] += gamma_jk * obs_t
+                                    diff = np.asarray(obs_t) - np.asarray(mu_jk)
+                                    diff_outer = np.outer(diff, diff)
+                                    expect_obs_cov[j, k] += gamma_jk * diff_outer
                         else:
                             # Single Gaussian case
                             for j in range(hmm.N):

@@ -5,6 +5,40 @@ import numpy.typing as npt
 from numpy import random as rand
 
 
+def gaussian_pdf(
+    obs: npt.ArrayLike,
+    mean: npt.NDArray,
+    cov: npt.NDArray,
+    reg_covar: float = 1e-6,
+) -> float:
+    """Calculate multivariate Gaussian probability density.
+
+    Args:
+        obs: Observation vector (n_features,)
+        mean: Mean vector (n_features,)
+        cov: Covariance matrix (n_features x n_features)
+        reg_covar: Regularization constant to prevent singular covariance
+
+    Returns:
+        Probability density at obs
+    """
+    obs_arr = np.asarray(obs)
+    d = obs_arr.shape[0] if obs_arr.ndim > 0 else 1
+    diff = obs_arr - np.asarray(mean)
+
+    reg_cov = cov + (reg_covar * np.eye(d))
+
+    if d == 1:
+        diff_scalar = float(np.squeeze(diff))
+        var = float(np.squeeze(reg_cov))
+        return float(np.exp(-0.5 * (diff_scalar**2) / var) / np.sqrt(2 * np.pi * var))
+    else:
+        cov_inv = np.linalg.inv(reg_cov)
+        det_cov = np.linalg.det(reg_cov)
+        exponent = -0.5 * np.dot(np.dot(diff.T, cov_inv), diff)
+        return float(np.exp(exponent) / np.sqrt(((2 * np.pi) ** d) * det_cov))
+
+
 class GaussianHMM:
     """
     Continuous Hidden Markov Model with single multivariate Gaussian emissions per state.
@@ -82,7 +116,7 @@ class GaussianHMM:
         else:
             self.Labels = list(range(self.N))
 
-    def emission_prob(self, state: int, obs: int | npt.NDArray) -> float:
+    def emission_prob(self, state: int, obs: npt.ArrayLike) -> float:
         """Calculate b_j(O) = N(O, mu_j, U_j).
 
         Returns the probability density of observation vector 'obs' given 'state'.
@@ -94,23 +128,7 @@ class GaussianHMM:
         Returns:
             Probability density at obs
         """
-        mu = self.means[state]
-        cov = self.covars[state]
-        d = self.n_features
-        diff = np.asarray(obs) - np.asarray(mu)
-
-        # Add regularization to prevent singular covariance
-        reg_cov = cov + (self.reg_covar * np.eye(d))
-
-        if d == 1:
-            diff_scalar = float(np.squeeze(diff))
-            var = float(np.squeeze(reg_cov))
-            return float(np.exp(-0.5 * (diff_scalar**2) / var) / np.sqrt(2 * np.pi * var))
-        else:
-            cov_inv = np.linalg.inv(reg_cov)
-            det_cov = np.linalg.det(reg_cov)
-            exponent = -0.5 * np.dot(np.dot(diff.T, cov_inv), diff)
-            return float(np.exp(exponent) / np.sqrt(((2 * np.pi) ** d) * det_cov))
+        return gaussian_pdf(obs, self.means[state], self.covars[state], self.reg_covar)
 
     def get_emission_probs(self, obs_t: int | npt.NDArray) -> npt.NDArray:
         """Returns emission probabilities for all states given observation obs_t.
@@ -229,7 +247,7 @@ class MixtureGaussianHMM:
         else:
             self.Labels = list(range(self.N))
 
-    def _gaussian_pdf(self, mean: npt.NDArray, cov: npt.NDArray, obs: npt.NDArray) -> float:
+    def _gaussian_pdf(self, mean: npt.NDArray, cov: npt.NDArray, obs: npt.ArrayLike) -> float:
         """Calculate Gaussian PDF for multivariate case.
 
         Args:
@@ -240,23 +258,9 @@ class MixtureGaussianHMM:
         Returns:
             Probability density
         """
-        d = self.n_features
-        diff = np.asarray(obs) - np.asarray(mean)
+        return gaussian_pdf(obs, mean, cov, self.reg_covar)
 
-        # Add regularization to prevent singular covariance
-        reg_cov = cov + (self.reg_covar * np.eye(d))
-
-        if d == 1:
-            diff_scalar = float(np.squeeze(diff))
-            var = float(np.squeeze(reg_cov))
-            return float(np.exp(-0.5 * (diff_scalar**2) / var) / np.sqrt(2 * np.pi * var))
-        else:
-            cov_inv = np.linalg.inv(reg_cov)
-            det_cov = np.linalg.det(reg_cov)
-            exponent = -0.5 * np.dot(np.dot(diff.T, cov_inv), diff)
-            return float(np.exp(exponent) / np.sqrt(((2 * np.pi) ** d) * det_cov))
-
-    def emission_prob(self, state: int, obs: int | npt.NDArray) -> float:
+    def emission_prob(self, state: int, obs: npt.ArrayLike) -> float:
         """Calculate b_j(O) = sum_k c_jk * N(O, mu_jk, U_jk).
 
         Returns the probability density of observation vector 'obs' given 'state'
