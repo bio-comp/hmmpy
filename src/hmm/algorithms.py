@@ -1,5 +1,6 @@
 """HMM algorithms: forward, backward, viterbi, baum_welch."""
 
+import warnings
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -109,6 +110,15 @@ def backward(
         Beta: backward variable matrix (N x T)
     """
     T = len(obs)
+
+    # Warn if using unscaled backward for long sequences
+    if c is None and T > 50:
+        warnings.warn(
+            f"backward: No scaling coefficients provided for long sequence (T={T}). "
+            "Unscaled backward values may underflow to zero. "
+            "Consider using scaling=True in forward and passing c to backward.",
+            RuntimeWarning,
+        )
 
     beta = np.zeros([hmm.N, T], dtype=float)
     beta[:, T - 1] = 1.0
