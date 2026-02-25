@@ -63,18 +63,19 @@ def forward(
         c = np.zeros(T, dtype=float)
 
     alpha = np.zeros([hmm.N, T], dtype=float)
+    tiny = np.finfo(float).tiny
 
     alpha[:, 0] = hmm.Pi * hmm.get_emission_probs(obs[0])
 
     if scaling and c is not None:
-        c[0] = 1.0 / np.sum(alpha[:, 0])
+        c[0] = 1.0 / np.maximum(np.sum(alpha[:, 0]), tiny)
         alpha[:, 0] = c[0] * alpha[:, 0]
 
     for t in range(1, T):
         alpha[:, t] = np.dot(alpha[:, t - 1], hmm.A) * hmm.get_emission_probs(obs[t])
 
         if scaling and c is not None:
-            c[t] = 1.0 / np.sum(alpha[:, t])
+            c[t] = 1.0 / np.maximum(np.sum(alpha[:, t]), tiny)
             alpha[:, t] = alpha[:, t] * c[t]
 
     if scaling and c is not None:
@@ -145,10 +146,12 @@ def viterbi(
     T = len(obs)
 
     delta = np.zeros([hmm.N, T], dtype=float)
-    eps = 1e-300  # Avoid log(0)
+    tiny = np.finfo(float).tiny
 
     if scaling:
-        delta[:, 0] = np.log(hmm.Pi + eps) + np.log(hmm.get_emission_probs(obs[0]) + eps)
+        delta[:, 0] = np.log(np.maximum(hmm.Pi, tiny)) + np.log(
+            np.maximum(hmm.get_emission_probs(obs[0]), tiny)
+        )
     else:
         delta[:, 0] = hmm.Pi * hmm.get_emission_probs(obs[0])
 
@@ -156,8 +159,8 @@ def viterbi(
 
     if scaling:
         for t in range(1, T):
-            nus = rearrange(delta[:, t - 1], "n -> n 1") + np.log(hmm.A + eps)
-            delta[:, t] = nus.max(0) + np.log(hmm.get_emission_probs(obs[t]) + eps)
+            nus = rearrange(delta[:, t - 1], "n -> n 1") + np.log(np.maximum(hmm.A, tiny))
+            delta[:, t] = nus.max(0) + np.log(np.maximum(hmm.get_emission_probs(obs[t]), tiny))
             psi[:, t] = nus.argmax(0)
     else:
         for t in range(1, T):
@@ -325,13 +328,6 @@ def baum_welch(
                                         pdf = np.exp(exponent) / np.sqrt(
                                             ((2 * np.pi) ** hmm.n_features) * det_cov
                                         )
-                                    cov_inv = np.linalg.inv(sigma_jk)
-                                    det_cov = np.linalg.det(sigma_jk)
-                                    exponent = -0.5 * np.dot(np.dot(diff.T, cov_inv), diff)
-                                    pdf = np.exp(exponent) / np.sqrt(
-                                        ((2 * np.pi) ** hmm.n_features) * det_cov
-                                    )
-
                                 if b_j[j] > 0:
                                     gamma_jk = gamma[j, t] * c_jk * pdf / b_j[j]
                                 else:
@@ -442,31 +438,31 @@ def baum_welch(
                     print(f"  -> New best validation at epoch {epoch + 1}")
 
     if graph:
-        import pylab  # type: ignore[import-untyped]
+        import matplotlib.pyplot as plt
 
         if val_set is not None:
-            pylab.figure()
-            pylab.subplot(211)
-            pylab.title("Training Reestimation Performance")
-            pylab.xlabel("Epochs")
-            pylab.ylabel(r"$\log( P ( O | \lambda ) )$")
-            pylab.plot(LLs, label="Training data", color="red")
-            pylab.subplots_adjust(hspace=0.4)
-            pylab.subplot(212)
-            pylab.title("Validation Reestimation Performance")
-            pylab.plot(val_LLs, label="Validation LL", color="blue")
-            pylab.xlabel("Epochs")
-            pylab.ylabel(r"$\log( P ( O | \lambda ) )$")
-            pylab.axvline(best_epoch, color="black", label="Best validation LL", linewidth=2)
-            pylab.legend(labelsep=0.01, shadow=1, loc="lower right")
-            pylab.savefig(fname)
+            plt.figure()
+            plt.subplot(211)
+            plt.title("Training Reestimation Performance")
+            plt.xlabel("Epochs")
+            plt.ylabel(r"$\log( P ( O | \lambda ) )$")
+            plt.plot(LLs, label="Training data", color="red")
+            plt.subplots_adjust(hspace=0.4)
+            plt.subplot(212)
+            plt.title("Validation Reestimation Performance")
+            plt.plot(val_LLs, label="Validation LL", color="blue")
+            plt.xlabel("Epochs")
+            plt.ylabel(r"$\log( P ( O | \lambda ) )$")
+            plt.axvline(best_epoch, color="black", label="Best validation LL", linewidth=2)
+            plt.legend(labelsep=0.01, shadow=1, loc="lower right")
+            plt.savefig(fname)
         else:
-            pylab.figure()
-            pylab.title("Training Reestimation Performance")
-            pylab.xlabel("Epochs")
-            pylab.ylabel(r"$\log( P ( O | \lambda ) )$")
-            pylab.plot(LLs, label="Training data", color="red")
-            pylab.savefig(fname)
+            plt.figure()
+            plt.title("Training Reestimation Performance")
+            plt.xlabel("Epochs")
+            plt.ylabel(r"$\log( P ( O | \lambda ) )$")
+            plt.plot(LLs, label="Training data", color="red")
+            plt.savefig(fname)
 
     if val_set is not None:
         hmm.A = best_A
