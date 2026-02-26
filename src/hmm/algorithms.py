@@ -3,15 +3,25 @@
 from __future__ import annotations
 
 import copy
-import warnings
 from collections.abc import Sequence
+from enum import Enum
 from typing import TYPE_CHECKING
 
 import numpy as np
 import numpy.typing as npt
 from einops import rearrange
+from scipy.special import logsumexp
 
 from hmm.base import HMMProtocol
+
+
+class ComputeMode(Enum):
+    """Computation mode for HMM algorithms."""
+
+    SCALED = "scaled"  # Rabiner's scaling coefficients
+    LOG = "log"  # Log-domain with logsumexp
+    UNSCALED = "unscaled"  # Original (risks underflow)
+
 
 if TYPE_CHECKING:
     from hmm.continuous import GaussianHMM, MixtureGaussianHMM
@@ -45,95 +55,131 @@ def symbol_index(hmm: HMM, obs: Sequence[int]) -> list[int]:
 def forward(
     hmm: AnyHMM,
     obs: Sequence[int] | Sequence[npt.NDArray],
-    scaling: bool = True,
-) -> tuple[float, npt.NDArray, npt.NDArray] | tuple[float, npt.NDArray]:
+    mode: ComputeMode = ComputeMode.SCALED,
+) -> tuple[float, npt.NDArray, npt.NDArray | None]:
     """Calculate the probability of an observation sequence, Obs, given the model.
 
     Implements the forward algorithm from Rabiner (1989).
 
+    Three computation modes are supported:
+    - "scaled": Use Rabiner's scaling coefficients c_t for numerical stability
+    - "log": Use log-domain computations with logsumexp (modern approach)
+    - "unscaled": Original unscaled computations (risks underflow for long sequences)
+
     Args:
         hmm: the HMM model (discrete HMM or GaussianHMM)
         obs: observation sequence (integers for discrete, arrays for continuous)
-        scaling: whether to use scaling (recommended for numerical stability)
+        mode: computation mode - "scaled" (default), "log", or "unscaled"
 
     Returns:
-        If scaling=True: (log_prob_Obs, Alpha, c) where:
-            - log_prob_Obs: log probability of the observation sequence
-            - Alpha: forward variable matrix (N x T)
-            - c: scaling coefficients (T,)
-        If scaling=False: (prob_Obs, Alpha) where:
-            - prob_Obs: probability of the observation sequence
-            - Alpha: forward variable matrix (N x T)
+        For "scaled" and "log" modes: (log_prob_Obs, Alpha, None)
+        For "unscaled" mode: (prob_Obs, Alpha, None)
     """
     T = len(obs)
+    tiny = np.finfo(float).tiny
+
+    if mode == ComputeMode.LOG:
+        log_Pi = np.log(np.maximum(hmm.Pi, tiny))
+        log_A = np.log(np.maximum(hmm.A, tiny))
+
+        log_alpha = np.zeros([hmm.N, T], dtype=float)
+
+        log_alpha[:, 0] = log_Pi + np.log(np.maximum(hmm.get_emission_probs(obs[0]), tiny))
+
+        for t in range(1, T):
+            log_alpha[:, t] = logsumexp(log_alpha[:, t - 1, None] + log_A, axis=0) + np.log(
+                np.maximum(hmm.get_emission_probs(obs[t]), tiny)
+            )
+
+        log_prob_Obs = logsumexp(log_alpha[:, T - 1])
+        return (float(log_prob_Obs), log_alpha, None)
 
     c: npt.NDArray | None = None
-    if scaling:
+    if mode == ComputeMode.SCALED:
         c = np.zeros(T, dtype=float)
 
     alpha = np.zeros([hmm.N, T], dtype=float)
-    tiny = np.finfo(float).tiny
 
     alpha[:, 0] = hmm.Pi * hmm.get_emission_probs(obs[0])
 
-    if scaling and c is not None:
+    if mode == ComputeMode.SCALED and c is not None:
         c[0] = 1.0 / np.maximum(np.sum(alpha[:, 0]), tiny)
         alpha[:, 0] = c[0] * alpha[:, 0]
 
     for t in range(1, T):
         alpha[:, t] = np.dot(alpha[:, t - 1], hmm.A) * hmm.get_emission_probs(obs[t])
 
-        if scaling and c is not None:
+        if mode == ComputeMode.SCALED and c is not None:
             c[t] = 1.0 / np.maximum(np.sum(alpha[:, t]), tiny)
             alpha[:, t] = alpha[:, t] * c[t]
 
-    if scaling and c is not None:
+    if mode == ComputeMode.SCALED and c is not None:
         log_prob_Obs = -np.sum(np.log(c))
-        return (log_prob_Obs, alpha, c)
+        return (float(log_prob_Obs), alpha, c)
     else:
         prob_Obs = np.sum(alpha[:, T - 1])
-        return (prob_Obs, alpha)
+        return (float(prob_Obs), alpha)
 
 
 def backward(
     hmm: AnyHMM,
     obs: Sequence[int] | Sequence[npt.NDArray],
-    c: npt.NDArray | None = None,
+    mode: ComputeMode = ComputeMode.SCALED,
+    scaling_coeffs: npt.NDArray | None = None,
 ) -> npt.NDArray:
-    """
-    Calculate the probability of a partial observation sequence
-    from t+1 to T, given some state t.
+    """Calculate the probability of a partial observation sequence from t+1 to T.
 
     Implements the backward algorithm from Rabiner (1989).
 
     Args:
         hmm: the HMM model
         obs: observation sequence
-        c: scaling coefficients from forward algorithm (if using scaling)
+        mode: computation mode - "scaled" (default), "log", or "unscaled"
+        scaling_coeffs: scaling coefficients from forward algorithm (if already computed)
 
     Returns:
         Beta: backward variable matrix (N x T)
     """
     T = len(obs)
+    tiny = np.finfo(float).tiny
 
-    # Warn if using unscaled backward for long sequences
-    if c is None and T > 50:
-        warnings.warn(
-            f"backward: No scaling coefficients provided for long sequence (T={T}). "
-            "Unscaled backward values may underflow to zero. "
-            "Consider using scaling=True in forward and passing c to backward.",
-            RuntimeWarning,
-        )
+    if mode == ComputeMode.LOG:
+        log_A = np.log(np.maximum(hmm.A, tiny))
+
+        log_beta = np.zeros([hmm.N, T], dtype=float)
+        log_beta[:, T - 1] = 0.0
+
+        for t in reversed(range(T - 1)):
+            log_beta[:, t] = logsumexp(
+                log_A
+                + log_beta[:, t + 1, None]
+                + np.log(np.maximum(hmm.get_emission_probs(obs[t + 1]), tiny)),
+                axis=0,
+            )
+
+        return np.exp(log_beta)
+
+    c: npt.NDArray | None = scaling_coeffs
+    if c is None:
+        if mode == ComputeMode.SCALED:
+            c = np.zeros(T, dtype=float)
 
     beta = np.zeros([hmm.N, T], dtype=float)
     beta[:, T - 1] = 1.0
-    if c is not None:
+
+    if mode == ComputeMode.SCALED and c is not None and scaling_coeffs is None:
+        c[T - 1] = 1.0
+        beta[:, T - 1] = beta[:, T - 1] * c[T - 1]
+    elif mode == ComputeMode.SCALED and c is not None:
         beta[:, T - 1] = beta[:, T - 1] * c[T - 1]
 
     for t in reversed(range(T - 1)):
         beta[:, t] = np.dot(hmm.A, (hmm.get_emission_probs(obs[t + 1]) * beta[:, t + 1]))
 
-        if c is not None:
+        if mode == ComputeMode.SCALED and c is not None and scaling_coeffs is None:
+            c[t] = 1.0 / np.maximum(np.sum(beta[:, t]), tiny)
+            beta[:, t] = beta[:, t] * c[t]
+        elif mode == ComputeMode.SCALED and c is not None:
             beta[:, t] = beta[:, t] * c[t]
 
     return beta
@@ -142,18 +188,16 @@ def backward(
 def viterbi(
     hmm: AnyHMM,
     obs: Sequence[int] | Sequence[npt.NDArray],
-    scaling: bool = True,
+    mode: ComputeMode = ComputeMode.SCALED,
 ) -> tuple[list[int], npt.NDArray, npt.NDArray]:
-    """
-    Calculate P(Q|Obs, hmm) and yield the state sequence Q* that
-    maximizes this probability.
+    """Calculate P(Q|Obs, hmm) and yield the state sequence Q* that maximizes this probability.
 
     Implements the Viterbi algorithm from Rabiner (1989).
 
     Args:
         hmm: the HMM model
         obs: observation sequence
-        scaling: whether to use log scaling (recommended)
+        mode: computation mode - "scaled" (default), "log", or "unscaled"
 
     Returns:
         (Q_star, Delta, Psi) where:
@@ -166,7 +210,7 @@ def viterbi(
     delta = np.zeros([hmm.N, T], dtype=float)
     tiny = np.finfo(float).tiny
 
-    if scaling:
+    if mode in (ComputeMode.SCALED, ComputeMode.LOG):
         delta[:, 0] = np.log(np.maximum(hmm.Pi, tiny)) + np.log(
             np.maximum(hmm.get_emission_probs(obs[0]), tiny)
         )
@@ -175,7 +219,7 @@ def viterbi(
 
     psi = np.zeros([hmm.N, T], dtype=int)
 
-    if scaling:
+    if mode in (ComputeMode.SCALED, ComputeMode.LOG):
         for t in range(1, T):
             nus = rearrange(delta[:, t - 1], "n -> n 1") + np.log(np.maximum(hmm.A, tiny))
             delta[:, t] = nus.max(0) + np.log(np.maximum(hmm.get_emission_probs(obs[t]), tiny))
@@ -201,7 +245,7 @@ def baum_welch(
     update_pi: bool = True,
     update_a: bool = True,
     update_b: bool = True,
-    scaling: bool = True,
+    mode: ComputeMode = ComputeMode.SCALED,
     graph: bool = False,
     fname: str = "ll.eps",
     verbose: bool = False,
@@ -219,7 +263,7 @@ def baum_welch(
         update_pi: flag to update initial state probabilities (default: True)
         update_a: flag to update transition probabilities (default: True)
         update_b: flag to update observation emission probabilities (default: True)
-        scaling: flag to scale probabilities (default: True, recommended)
+        mode: computation mode - "scaled", "log", or "unscaled" (default: scaled)
         graph: flag to plot log-likelihoods (default: False)
         fname: file name to save plot figure (default: "ll.eps")
         verbose: flag to print training progress (default: False)
@@ -244,10 +288,9 @@ def baum_welch(
         for obs in obs_seqs:
             obs_list = list(obs)
 
-            forward_result = forward(hmm=hmm, obs=obs_list, scaling=scaling)
-            log_prob_obs, alpha = forward_result[0], forward_result[1]
-            c = forward_result[2] if scaling and len(forward_result) > 2 else None
-            beta = backward(hmm=hmm, obs=obs_list, c=c)
+            forward_result = forward(hmm=hmm, obs=obs_list, mode=mode)
+            log_prob_obs, alpha, c = forward_result
+            beta = backward(hmm=hmm, obs=obs_list, mode=mode, scaling_coeffs=c)
 
             LL_epoch += log_prob_obs
 
@@ -265,8 +308,7 @@ def baum_welch(
                 beta[:, 1:],
             )
 
-            if not scaling:
-                xi /= np.maximum(xi.sum(axis=(0, 1), keepdims=True), tiny)
+            xi /= np.maximum(xi.sum(axis=(0, 1), keepdims=True), tiny)
 
             xis.append(xi)
 
@@ -290,7 +332,7 @@ def baum_welch(
             val_LL_epoch = 0.0
             for val_obs in val_set:
                 val_obs_list = list(val_obs)
-                val_LL_epoch += forward(hmm=hmm, obs=val_obs_list, scaling=True)[0]
+                val_LL_epoch += forward(hmm=hmm, obs=val_obs_list, mode=mode)[0]
             val_LLs.append(val_LL_epoch)
 
             if best_val_LL is None or val_LL_epoch > best_val_LL:

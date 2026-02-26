@@ -6,6 +6,7 @@ from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from hmm import HMM, backward, baum_welch, forward, viterbi
+from hmm.algorithms import ComputeMode
 
 
 def valid_transition_matrix(n_states: int) -> np.ndarray:
@@ -45,7 +46,7 @@ def test_forward_probability_non_negative(n_states: int, n_symbols: int) -> None
     hmm = HMM(n_states=n_states, A=A, B=B, V=V)
     obs = V * 5
 
-    result = forward(hmm, obs, scaling=True)
+    result = forward(hmm, obs, mode=ComputeMode.SCALED)
     log_prob = result[0]
     assert np.isfinite(log_prob), "Log probability should be finite"
 
@@ -62,8 +63,8 @@ def test_forward_backward_consistency(n_states: int, n_symbols: int) -> None:
     obs = V * 3
     assume(len(obs) >= 2)
 
-    log_prob, alpha, c = forward(hmm, obs, scaling=True)
-    beta = backward(hmm, obs, c=c)
+    log_prob, alpha, c = forward(hmm, obs, mode=ComputeMode.SCALED)
+    beta = backward(hmm, obs, scaling_coeffs=c)
 
     for t in range(len(obs)):
         gamma_sum = np.sum(alpha[:, t] * beta[:, t])
@@ -83,7 +84,7 @@ def test_viterbi_path_valid(n_states: int, n_symbols: int) -> None:
     hmm = HMM(n_states=n_states, A=A, B=B, V=V)
     obs = V * 3
 
-    path, _, _ = viterbi(hmm, obs, scaling=True)
+    path, _, _ = viterbi(hmm, obs, mode=ComputeMode.SCALED)
     assert len(path) == len(obs), "Path length should match observation length"
     assert all(0 <= s < hmm.N for s in path), "All states in path should be valid"
 
@@ -99,8 +100,8 @@ def test_viterbi_prob_at_least_forward(n_states: int, n_symbols: int) -> None:
     hmm = HMM(n_states=n_states, A=A, B=B, V=V)
     obs = V * 3
 
-    forward_prob, _, _ = forward(hmm, obs, scaling=True)
-    _, delta, _ = viterbi(hmm, obs, scaling=True)
+    forward_prob, _, _ = forward(hmm, obs, mode=ComputeMode.SCALED)
+    _, delta, _ = viterbi(hmm, obs, mode=ComputeMode.SCALED)
     viterbi_log_prob = np.max(delta[:, -1])
 
     assert viterbi_log_prob <= forward_prob + 1e-3, "Viterbi prob should be <= Forward prob"
@@ -119,16 +120,16 @@ def test_baum_welch_increases_log_likelihood(n_states: int, n_symbols: int) -> N
     obs_seqs = [V * 3, V * 2]
 
     initial_hmm = HMM(n_states=n_states, A=A.copy(), B=B.copy(), V=V)
-    initial_ll = sum(forward(initial_hmm, obs, scaling=True)[0] for obs in obs_seqs)
+    initial_ll = sum(forward(initial_hmm, obs, mode=ComputeMode.SCALED)[0] for obs in obs_seqs)
 
     trained_hmm = baum_welch(
         HMM(n_states=n_states, A=A.copy(), B=B.copy(), V=V),
         obs_seqs=obs_seqs,
         epochs=5,
-        scaling=True,
+        mode=ComputeMode.SCALED,
     )
 
-    final_ll = sum(forward(trained_hmm, obs, scaling=True)[0] for obs in obs_seqs)
+    final_ll = sum(forward(trained_hmm, obs, mode=ComputeMode.SCALED)[0] for obs in obs_seqs)
 
     assert final_ll >= initial_ll - 1e-3, "Log-likelihood should not decrease after training"
 
@@ -142,10 +143,10 @@ def test_single_state_hmm(n_states: int, n_symbols: int) -> None:
     hmm = HMM(n_states=n_states, A=A, B=B, V=V)
     obs = [V[0]] * 5
 
-    log_prob, alpha = forward(hmm, obs, scaling=False)
+    log_prob, alpha = forward(hmm, obs, mode=ComputeMode.UNSCALED)
     assert np.isfinite(log_prob), "Forward should work"
 
-    path, delta, _ = viterbi(hmm, obs, scaling=True)
+    path, delta, _ = viterbi(hmm, obs, mode=ComputeMode.SCALED)
     assert len(path) == len(obs), "Viterbi path length should match"
 
 
@@ -160,8 +161,8 @@ def test_forward_scaling_works(n_states: int, n_symbols: int) -> None:
     hmm = HMM(n_states=n_states, A=A, B=B, V=V)
     obs = V * 3
 
-    log_prob_scaled, alpha_scaled, c = forward(hmm, obs, scaling=True)
-    prob_unscaled, alpha_unscaled = forward(hmm, obs, scaling=False)
+    log_prob_scaled, alpha_scaled, c = forward(hmm, obs, mode=ComputeMode.SCALED)
+    prob_unscaled, alpha_unscaled = forward(hmm, obs, mode=ComputeMode.UNSCALED)
 
     log_prob_unscaled = np.log(prob_unscaled + 1e-300)
 
@@ -181,8 +182,8 @@ def test_backward_scaling_c(n_states: int, n_symbols: int) -> None:
     hmm = HMM(n_states=n_states, A=A, B=B, V=V)
     obs = V * 3
 
-    log_prob, alpha, c = forward(hmm, obs, scaling=True)
-    beta = backward(hmm, obs, c=c)
+    log_prob, alpha, c = forward(hmm, obs, mode=ComputeMode.SCALED)
+    beta = backward(hmm, obs, scaling_coeffs=c)
 
     for t in range(len(obs)):
         gamma_sum = np.sum(alpha[:, t] * beta[:, t])
@@ -205,7 +206,7 @@ def test_baum_welch_preserves_hmm_structure(n_states: int, n_symbols: int) -> No
         HMM(n_states=n_states, A=A.copy(), B=B.copy(), V=V),
         obs_seqs=obs_seqs,
         epochs=3,
-        scaling=True,
+        mode=ComputeMode.SCALED,
     )
 
     assert np.allclose(trained.A.sum(axis=1), 1.0, atol=1e-4), "A should remain row-stochastic"

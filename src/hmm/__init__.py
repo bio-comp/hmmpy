@@ -2,6 +2,7 @@
 # Based on Rabiner tutorial
 
 from hmm.algorithms import backward, baum_welch, forward, viterbi
+from hmm.algorithms import ComputeMode
 from hmm.continuous import GaussianHMM
 from hmm.hmm import HMM, HMMClassifier
 
@@ -13,4 +14,5 @@ __all__ = [
     "backward",
     "viterbi",
     "baum_welch",
+    "ComputeMode",
 ]
