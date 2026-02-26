@@ -8,7 +8,7 @@ import numpy as np
 import numpy.typing as npt
 from numpy import random as rand
 
-from hmm.algorithms import forward
+from hmm.algorithms import ComputeMode, forward
 
 
 class HMMClassifier:
@@ -54,8 +54,8 @@ class HMMClassifier:
         pos_hmm = self.pos_hmm
         neg_hmm = self.neg_hmm
 
-        pos_ll = forward(pos_hmm, sample, scaling=True)[0]
-        neg_ll = forward(neg_hmm, sample, scaling=True)[0]
+        pos_ll = forward(pos_hmm, sample, mode=ComputeMode.SCALED)[0]
+        neg_ll = forward(neg_hmm, sample, mode=ComputeMode.SCALED)[0]
 
         return pos_ll - neg_ll
 

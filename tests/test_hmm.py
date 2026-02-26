@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from hmm import HMM, HMMClassifier, backward, baum_welch, forward, viterbi
+from hmm.algorithms import ComputeMode
 
 
 class TestHMMClass:
@@ -105,7 +106,7 @@ class TestForwardAlgorithm:
         hmm = HMM(n_states=2, A=A, B=B, V=V)
 
         obs = [1, 2, 1, 6, 6]
-        result = forward(hmm, obs, scaling=True)
+        result = forward(hmm, obs, mode=ComputeMode.SCALED)
 
         assert len(result) == 3
         log_prob, alpha, c = result
@@ -121,7 +122,7 @@ class TestForwardAlgorithm:
         hmm = HMM(n_states=2, A=A, B=B, V=V)
 
         obs = [1, 2, 1, 6, 6]
-        result = forward(hmm, obs, scaling=False)
+        result = forward(hmm, obs, mode=ComputeMode.UNSCALED)
 
         assert len(result) == 2
         prob, alpha = result
@@ -136,7 +137,7 @@ class TestForwardAlgorithm:
         hmm = HMM(n_states=2, A=A, B=B, V=V)
 
         with pytest.raises(IndexError):
-            forward(hmm, [], scaling=True)
+            forward(hmm, [], mode=ComputeMode.SCALED)
 
     def test_forward_unseen_symbol(self) -> None:
         """Test forward with unseen symbol raises KeyError."""
@@ -146,7 +147,7 @@ class TestForwardAlgorithm:
         hmm = HMM(n_states=2, A=A, B=B, V=V)
 
         with pytest.raises(KeyError):
-            forward(hmm, [99], scaling=True)
+            forward(hmm, [99], mode=ComputeMode.SCALED)
 
 
 class TestBackwardAlgorithm:
@@ -160,8 +161,8 @@ class TestBackwardAlgorithm:
         hmm = HMM(n_states=2, A=A, B=B, V=V)
 
         obs = [1, 2, 1, 6, 6]
-        log_prob, alpha, c = forward(hmm, obs, scaling=True)
-        beta = backward(hmm, obs, c)
+        log_prob, alpha, c = forward(hmm, obs, mode=ComputeMode.SCALED)
+        beta = backward(hmm, obs, scaling_coeffs=c)
 
         assert beta.shape == (2, 5)
 
@@ -189,7 +190,7 @@ class TestViterbiAlgorithm:
         hmm = HMM(n_states=2, A=A, B=B, V=V)
 
         obs = [1, 2, 1, 6, 6]
-        q_star, delta, psi = viterbi(hmm, obs, scaling=True)
+        q_star, delta, psi = viterbi(hmm, obs, mode=ComputeMode.SCALED)
 
         assert len(q_star) == 5
         assert delta.shape == (2, 5)
@@ -204,7 +205,7 @@ class TestViterbiAlgorithm:
         hmm = HMM(n_states=2, A=A, B=B, V=V)
 
         obs = [1, 2, 1, 6, 6]
-        q_star, delta, psi = viterbi(hmm, obs, scaling=False)
+        q_star, delta, psi = viterbi(hmm, obs, mode=ComputeMode.SCALED)
 
         assert len(q_star) == 5
 
@@ -216,7 +217,7 @@ class TestViterbiAlgorithm:
         hmm = HMM(n_states=2, A=A, B=B, V=V)
 
         with pytest.raises(IndexError):
-            viterbi(hmm, [], scaling=True)
+            viterbi(hmm, [], mode=ComputeMode.SCALED)
 
     def test_viterbi_unseen_symbol(self) -> None:
         """Test Viterbi with unseen symbol raises KeyError."""
@@ -226,7 +227,7 @@ class TestViterbiAlgorithm:
         hmm = HMM(n_states=2, A=A, B=B, V=V)
 
         with pytest.raises(KeyError):
-            viterbi(hmm, [99], scaling=True)
+            viterbi(hmm, [99], mode=ComputeMode.SCALED)
 
 
 class TestBaumWelch:
@@ -270,8 +271,8 @@ class TestBaumWelch:
 
         obs_seqs = [[1, 2, 1, 6, 6]]
 
-        baum_welch(hmm1, obs_seqs, epochs=3, scaling=True)
-        baum_welch(hmm2, obs_seqs, epochs=3, scaling=False)
+        baum_welch(hmm1, obs_seqs, epochs=3, mode=ComputeMode.SCALED)
+        baum_welch(hmm2, obs_seqs, epochs=3, mode=ComputeMode.SCALED)
 
         assert hmm1.A.shape == hmm2.A.shape
 
