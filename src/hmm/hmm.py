@@ -196,6 +196,60 @@ class HMM:
             obs_t = int(np.squeeze(obs_t))
         return self.B[:, self.symbol_map[obs_t]]
 
+    def m_step(
+        self,
+        obs_seqs: list[Sequence[npt.NDArray]],
+        gammas: list[npt.NDArray],
+        xis: list[npt.NDArray],
+        update_pi: bool = True,
+        update_a: bool = True,
+        update_b: bool = True,
+    ) -> None:
+        """Perform M-step for discrete HMM."""
+        if not gammas:
+            return
+
+        expect_si_t0_all = np.zeros(self.N, dtype=float)
+        expect_si_all_TM1 = np.zeros(self.N, dtype=float)
+        expect_si_sj_all_TM1 = np.zeros([self.N, self.N], dtype=float)
+        expect_si_vk_all = np.zeros([self.N, self.M], dtype=float)
+
+        for obs, gamma, xi in zip(obs_seqs, gammas, xis):
+            obs_symbols = [self.symbol_map[o] for o in obs]
+            T = len(obs)
+
+            expect_si_t0_all += gamma[:, 0]
+            expect_si_all_TM1 += gamma[:, : T - 1].sum(1)
+            expect_si_sj_all_TM1 += xi[:, :, : T - 1].sum(2)
+
+            if update_b:
+                B_bar = np.zeros([self.N, self.M], dtype=float)
+                for k in range(self.M):
+                    which = np.array([self.V[k] == x for x in obs_symbols])
+                    B_bar[:, k] = gamma.T[which, :].sum(0)
+                expect_si_vk_all += B_bar
+
+        if update_pi:
+            self.Pi = expect_si_t0_all / np.sum(expect_si_t0_all)
+
+        if update_a:
+            for i in range(self.N):
+                if expect_si_all_TM1[i] > 0:
+                    self.A[i, :] = expect_si_sj_all_TM1[i, :] / expect_si_all_TM1[i]
+
+        if update_b:
+            if gamma is not None:
+                for i in range(self.N):
+                    if gamma.sum() > 0:
+                        row_sum = expect_si_vk_all[i, :].sum()
+                        if row_sum > 0:
+                            expect_si_vk_all[i, :] = expect_si_vk_all[i, :] / row_sum
+
+            self.B = expect_si_vk_all
+
+            for i in self.F:
+                self.B[i, :] = self.F[i]
+
     def __repr__(self) -> str:
         retn = ""
         retn += f"num hiddens: {self.N}\n"

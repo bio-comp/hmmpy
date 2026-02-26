@@ -1,5 +1,7 @@
 """Continuous Hidden Markov Model implementation."""
 
+from collections.abc import Sequence
+
 import numpy as np
 import numpy.typing as npt
 from numpy import random as rand
@@ -143,6 +145,55 @@ class GaussianHMM:
         for i in range(self.N):
             probs[i] = self.emission_prob(i, obs_t)
         return probs
+
+    def m_step(
+        self,
+        obs_seqs: list[Sequence[npt.NDArray]],
+        gammas: list[npt.NDArray],
+        xis: list[npt.NDArray],
+        update_pi: bool = True,
+        update_a: bool = True,
+        update_b: bool = True,
+    ) -> None:
+        """Perform M-step for GaussianHMM."""
+        expect_si_t0_all = np.zeros(self.N, dtype=float)
+        expect_si_all_TM1 = np.zeros(self.N, dtype=float)
+        expect_si_sj_all_TM1 = np.zeros([self.N, self.N], dtype=float)
+        expect_si_all = np.zeros(self.N, dtype=float)
+        expect_obs_sum = np.zeros([self.N, self.n_features], dtype=float)
+        expect_obs_cov = np.zeros([self.N, self.n_features, self.n_features], dtype=float)
+
+        for obs, gamma, xi in zip(obs_seqs, gammas, xis):
+            T = len(obs)
+
+            expect_si_t0_all += gamma[:, 0]
+            expect_si_all_TM1 += gamma[:, : T - 1].sum(1)
+            expect_si_sj_all_TM1 += xi[:, :, : T - 1].sum(2)
+            expect_si_all += gamma.sum(1)
+
+            if update_b:
+                for t in range(T):
+                    obs_t = np.asarray(obs[t])
+                    for j in range(self.N):
+                        expect_obs_sum[j] += gamma[j, t] * obs_t
+                        diff = obs_t - self.means[j]
+                        expect_obs_cov[j] += gamma[j, t] * np.outer(diff, diff)
+
+        if update_pi:
+            self.Pi = expect_si_t0_all / np.sum(expect_si_t0_all)
+
+        if update_a:
+            for i in range(self.N):
+                if expect_si_all_TM1[i] > 0:
+                    self.A[i, :] = expect_si_sj_all_TM1[i, :] / expect_si_all_TM1[i]
+
+        if update_b:
+            for j in range(self.N):
+                if expect_si_all[j] > 0:
+                    self.means[j] = expect_obs_sum[j] / expect_si_all[j]
+                    self.covars[j] = (expect_obs_cov[j] / expect_si_all[j]) + (
+                        self.reg_covar * np.eye(self.n_features)
+                    )
 
     def __repr__(self) -> str:
         retn = ""
@@ -294,6 +345,74 @@ class MixtureGaussianHMM:
         for i in range(self.N):
             probs[i] = self.emission_prob(i, obs_t)
         return probs
+
+    def m_step(
+        self,
+        obs_seqs: list[Sequence[npt.NDArray]],
+        gammas: list[npt.NDArray],
+        xis: list[npt.NDArray],
+        update_pi: bool = True,
+        update_a: bool = True,
+        update_b: bool = True,
+    ) -> None:
+        """Perform M-step for MixtureGaussianHMM."""
+        expect_si_t0_all = np.zeros(self.N, dtype=float)
+        expect_si_all_TM1 = np.zeros(self.N, dtype=float)
+        expect_si_sj_all_TM1 = np.zeros([self.N, self.N], dtype=float)
+        expect_si_all = np.zeros(self.N, dtype=float)
+        expect_mix_sum = np.zeros([self.N, self.n_mixtures], dtype=float)
+        expect_obs_sum = np.zeros([self.N, self.n_mixtures, self.n_features], dtype=float)
+        expect_obs_cov = np.zeros(
+            [self.N, self.n_mixtures, self.n_features, self.n_features], dtype=float
+        )
+
+        for obs, gamma, xi in zip(obs_seqs, gammas, xis):
+            T = len(obs)
+
+            expect_si_t0_all += gamma[:, 0]
+            expect_si_all_TM1 += gamma[:, : T - 1].sum(1)
+            expect_si_sj_all_TM1 += xi[:, :, : T - 1].sum(2)
+            expect_si_all += gamma.sum(1)
+
+            if update_b:
+                for t in range(T):
+                    obs_t = np.asarray(obs[t])
+                    b_j = self.get_emission_probs(obs_t)
+                    for j in range(self.N):
+                        for k in range(self.n_mixtures):
+                            c_jk = self.weights[j, k]
+                            mu_jk = self.means[j, k]
+                            sigma_jk = self.covars[j, k]
+                            pdf = gaussian_pdf(obs_t, mu_jk, sigma_jk, self.reg_covar)
+                            if b_j[j] > 0:
+                                gamma_jk = gamma[j, t] * c_jk * pdf / b_j[j]
+                            else:
+                                gamma_jk = 0.0
+                            expect_mix_sum[j, k] += gamma_jk
+                            expect_obs_sum[j, k] += gamma_jk * obs_t
+                            diff = obs_t - mu_jk
+                            expect_obs_cov[j, k] += gamma_jk * np.outer(diff, diff)
+
+        if update_pi:
+            self.Pi = expect_si_t0_all / np.sum(expect_si_t0_all)
+
+        if update_a:
+            for i in range(self.N):
+                if expect_si_all_TM1[i] > 0:
+                    self.A[i, :] = expect_si_sj_all_TM1[i, :] / expect_si_all_TM1[i]
+
+        if update_b:
+            for j in range(self.N):
+                if expect_si_all[j] > 0:
+                    self.weights[j, :] = expect_mix_sum[j, :] / expect_si_all[j]
+
+            for j in range(self.N):
+                for k in range(self.n_mixtures):
+                    if expect_mix_sum[j, k] > 0:
+                        self.means[j, k] = expect_obs_sum[j, k] / expect_mix_sum[j, k]
+                        self.covars[j, k] = (expect_obs_cov[j, k] / expect_mix_sum[j, k]) + (
+                            self.reg_covar * np.eye(self.n_features)
+                        )
 
     def __repr__(self) -> str:
         retn = ""
