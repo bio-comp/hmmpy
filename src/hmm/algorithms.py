@@ -11,7 +11,7 @@ import numpy as np
 import numpy.typing as npt
 from einops import rearrange
 
-from hmm.continuous import gaussian_pdf
+from hmm.base import HMMProtocol
 
 if TYPE_CHECKING:
     from hmm.continuous import GaussianHMM, MixtureGaussianHMM
@@ -194,10 +194,10 @@ def viterbi(
 
 
 def baum_welch(
-    hmm: AnyHMM,
-    obs_seqs: list[Sequence[int] | Sequence[npt.NDArray]],
+    hmm: HMMProtocol,
+    obs_seqs: list[Sequence[npt.NDArray]],
     epochs: int = 20,
-    val_set: list[Sequence[int] | Sequence[npt.NDArray]] | None = None,
+    val_set: list[Sequence[npt.NDArray]] | None = None,
     update_pi: bool = True,
     update_a: bool = True,
     update_b: bool = True,
@@ -205,14 +205,11 @@ def baum_welch(
     graph: bool = False,
     fname: str = "ll.eps",
     verbose: bool = False,
-    reg_covar: float | None = None,
-) -> HMM:
-    """EM algorithm to update Pi, A, and B for the HMM.
+) -> HMMProtocol:
+    """EM algorithm to train the HMM.
 
     Implements the Baum-Welch algorithm from Rabiner (1989).
-
-    For GaussianHMM with update_b=True, uses continuous emission
-    reestimation formulas (Rabiner Section VIII, Eq. 53-54).
+    Uses the HMMProtocol to delegate M-step to the model.
 
     Args:
         hmm: HMM model (discrete HMM or GaussianHMM) to train
@@ -226,219 +223,78 @@ def baum_welch(
         graph: flag to plot log-likelihoods (default: False)
         fname: file name to save plot figure (default: "ll.eps")
         verbose: flag to print training progress (default: False)
-        reg_covar: covariance regularization constant (default: from hmm.reg_covar or 1e-6)
 
     Returns:
         Trained HMM model
     """
-    # Use reg_covar from hmm if not provided
-    if reg_covar is None:
-        reg_covar = getattr(hmm, "reg_covar", 1e-6)
-    # Check if this is a GaussianHMM (doesn't have M attribute)
-    is_gaussian = not hasattr(hmm, "M")
+    tiny = np.finfo(float).tiny
 
     LLs: list[float] = []
     val_LLs: list[float] = []
-    best_A = copy.deepcopy(hmm.A)
-    best_Pi = copy.deepcopy(hmm.Pi)
+    best_hmm = copy.deepcopy(hmm)
     best_epoch = -1
     best_val_LL = float("-inf") if val_set is not None else None
 
-    # Check if this is a MixtureGaussianHMM (has n_mixtures attribute)
-    is_mixture = hasattr(hmm, "n_mixtures") and hmm.n_mixtures > 1
-    is_continuous = is_gaussian  # Both GaussianHMM and MixtureGaussianHMM are continuous
-
-    # For GaussianHMM: store best means and covariances for validation
-    if is_continuous:
-        best_means = copy.deepcopy(hmm.means)
-        best_covars = copy.deepcopy(hmm.covars)
-        if is_mixture:
-            best_weights = copy.deepcopy(hmm.weights)
-    else:
-        best_B = copy.deepcopy(hmm.B)
-
     for epoch in range(epochs):
         LL_epoch = 0.0
-        expect_si_all = np.zeros(hmm.N, dtype=float)
-        expect_si_all_TM1 = np.zeros(hmm.N, dtype=float)
-        expect_si_sj_all = np.zeros([hmm.N, hmm.N], dtype=float)
-        expect_si_sj_all_TM1 = np.zeros([hmm.N, hmm.N], dtype=float)
-        expect_si_t0_all = np.zeros(hmm.N, dtype=float)
 
-        # For GaussianHMM: accumulators for means and covariances
-        if is_continuous:
-            if is_mixture:
-                expect_mix_sum = np.zeros([hmm.N, hmm.n_mixtures], dtype=float)
-                expect_obs_sum = np.zeros([hmm.N, hmm.n_mixtures, hmm.n_features], dtype=float)
-                expect_obs_cov = np.zeros(
-                    [hmm.N, hmm.n_mixtures, hmm.n_features, hmm.n_features], dtype=float
-                )
-            else:
-                expect_obs_sum = np.zeros([hmm.N, hmm.n_features], dtype=float)
-                expect_obs_cov = np.zeros([hmm.N, hmm.n_features, hmm.n_features], dtype=float)
-        else:
-            expect_si_vk_all = np.zeros([hmm.N, hmm.M], dtype=float)
+        gammas: list[npt.NDArray] = []
+        xis: list[npt.NDArray] = []
 
         for obs in obs_seqs:
-            obs = list(obs)
-            forward_result = forward(hmm=hmm, obs=obs, scaling=scaling)
-            log_prob_obs = forward_result[0]
-            alpha = forward_result[1]
+            obs_list = list(obs)
+
+            forward_result = forward(hmm=hmm, obs=obs_list, scaling=scaling)
+            log_prob_obs, alpha = forward_result[0], forward_result[1]
             c = forward_result[2] if scaling and len(forward_result) > 2 else None
-            beta = backward(hmm=hmm, obs=obs, c=c)
+            beta = backward(hmm=hmm, obs=obs_list, c=c)
 
             LL_epoch += log_prob_obs
-            T = len(obs)
-
-            w_k = 1.0
-
-            obs_symbols = obs[:]
 
             gamma_raw = alpha * beta
-            gamma = gamma_raw / gamma_raw.sum(0)
+            gamma = gamma_raw / np.maximum(gamma_raw.sum(0), tiny)
+            gammas.append(gamma)
 
-            expect_si_t0_all += w_k * gamma[:, 0]
-            expect_si_all += w_k * gamma.sum(1)
-            expect_si_all_TM1 += w_k * gamma[:, : T - 1].sum(1)
+            B_next = np.column_stack([hmm.get_emission_probs(o) for o in obs_list[1:]])
 
-            xi = np.zeros([hmm.N, hmm.N, T - 1], dtype=float)
-            for t in range(T - 1):
-                for i in range(hmm.N):
-                    xi[i, :, t] = (
-                        alpha[i, t]
-                        * hmm.A[i, :]
-                        * hmm.get_emission_probs(obs[t + 1])
-                        * beta[:, t + 1]
-                    )
+            xi = np.einsum(
+                "it, ij, jt, jt -> ijt",
+                alpha[:, :-1],
+                hmm.A,
+                B_next,
+                beta[:, 1:],
+            )
 
-                if not scaling:
-                    xi[:, :, t] = xi[:, :, t] / xi[:, :, t].sum()
+            if not scaling:
+                xi /= np.maximum(xi.sum(axis=(0, 1), keepdims=True), tiny)
 
-            expect_si_sj_all += w_k * xi.sum(2)
-            expect_si_sj_all_TM1 += w_k * xi[:, :, : T - 1].sum(2)
+            xis.append(xi)
 
-            if update_b:
-                if is_continuous:
-                    # For continuous HMM: accumulate weighted observations
-                    # gamma_jk_t = gamma[j,t] * c_jk * N(O_t | mu_jk, sigma_jk) / b_j(O_t)
-                    for t in range(T):
-                        obs_t = np.asarray(obs[t])
-                        b_j = hmm.get_emission_probs(obs_t)
-
-                        if is_mixture:
-                            # Mixture Gaussian case
-                            for j in range(hmm.N):
-                                for k in range(hmm.n_mixtures):
-                                    c_jk = hmm.weights[j, k]
-                                    mu_jk = hmm.means[j, k]
-                                    sigma_jk = hmm.covars[j, k]
-
-                                    # Gaussian PDF for this mixture component
-                                    pdf = gaussian_pdf(obs_t, mu_jk, sigma_jk, reg_covar)
-                                    if b_j[j] > 0:
-                                        gamma_jk = gamma[j, t] * c_jk * pdf / b_j[j]
-                                    else:
-                                        gamma_jk = 0.0
-
-                                    expect_mix_sum[j, k] += gamma_jk
-                                    expect_obs_sum[j, k] += gamma_jk * obs_t
-                                    diff = np.asarray(obs_t) - np.asarray(mu_jk)
-                                    diff_outer = np.outer(diff, diff)
-                                    expect_obs_cov[j, k] += gamma_jk * diff_outer
-                        else:
-                            # Single Gaussian case
-                            for j in range(hmm.N):
-                                expect_obs_sum[j] += gamma[j, t] * obs_t
-                                diff = obs_t - hmm.means[j]
-                                expect_obs_cov[j] += gamma[j, t] * np.outer(diff, diff)
-                else:
-                    # Discrete B matrix update
-                    B_bar = np.zeros([hmm.N, hmm.M], dtype=float)
-                    for k in range(hmm.M):
-                        which = np.array([hmm.V[k] == x for x in obs_symbols])
-                        B_bar[:, k] = gamma.T[which, :].sum(0)
-                    expect_si_vk_all += w_k * B_bar
-
-        if update_pi:
-            expect_si_t0_all = expect_si_t0_all / np.sum(expect_si_t0_all)
-            hmm.Pi = expect_si_t0_all
-
-        if update_a:
-            A_bar = np.zeros([hmm.N, hmm.N], dtype=float)
-            for i in range(hmm.N):
-                if expect_si_all_TM1[i] > 0:
-                    A_bar[i, :] = expect_si_sj_all_TM1[i, :] / expect_si_all_TM1[i]
-            hmm.A = A_bar
-
-        if update_b:
-            if is_continuous:
-                if is_mixture:
-                    # Update mixture weights (Rabiner Eq. 52)
-                    for j in range(hmm.N):
-                        if expect_si_all[j] > 0:
-                            hmm.weights[j, :] = expect_mix_sum[j, :] / expect_si_all[j]
-
-                    # Update means (Rabiner Eq. 53)
-                    for j in range(hmm.N):
-                        for k in range(hmm.n_mixtures):
-                            if expect_mix_sum[j, k] > 0:
-                                hmm.means[j, k] = expect_obs_sum[j, k] / expect_mix_sum[j, k]
-
-                    # Update covariances (Rabiner Eq. 54) with regularization
-                    for j in range(hmm.N):
-                        for k in range(hmm.n_mixtures):
-                            if expect_mix_sum[j, k] > 0:
-                                hmm.covars[j, k] = (expect_obs_cov[j, k] / expect_mix_sum[j, k]) + (
-                                    reg_covar * np.eye(hmm.n_features)
-                                )
-                else:
-                    # Single Gaussian case - Update means (Rabiner Eq. 53)
-                    for j in range(hmm.N):
-                        if expect_si_all[j] > 0:
-                            hmm.means[j] = expect_obs_sum[j] / expect_si_all[j]
-
-                    # Update covariances (Rabiner Eq. 54) with regularization
-                    for j in range(hmm.N):
-                        if expect_si_all[j] > 0:
-                            hmm.covars[j] = (expect_obs_cov[j] / expect_si_all[j]) + (
-                                reg_covar * np.eye(hmm.n_features)
-                            )
-            else:
-                # Discrete B matrix update
-                for i in range(hmm.N):
-                    if expect_si_all[i] > 0:
-                        expect_si_vk_all[i, :] = expect_si_vk_all[i, :] / expect_si_all[i]
-
-                hmm.B = expect_si_vk_all
-
-                for i in hmm.F:
-                    hmm.B[i, :] = hmm.F[i]
+        hmm.m_step(
+            obs_seqs=obs_seqs,
+            gammas=gammas,
+            xis=xis,
+            update_pi=update_pi,
+            update_a=update_a,
+            update_b=update_b,
+        )
 
         LLs.append(LL_epoch)
 
-        if epoch > 1:
-            if LLs[epoch - 1] == LL_epoch:
-                if verbose:
-                    print("Log-likelihoods have plateaued--terminating training")
-                break
+        if epoch > 1 and LLs[epoch - 1] == LL_epoch:
+            if verbose:
+                print("Log-likelihoods have plateaued--terminating training")
+            break
 
         if val_set is not None:
             val_LL_epoch = 0.0
             for val_obs in val_set:
-                val_obs = list(val_obs)
-                val_LL_epoch += forward(hmm=hmm, obs=val_obs, scaling=True)[0]
+                val_obs_list = list(val_obs)
+                val_LL_epoch += forward(hmm=hmm, obs=val_obs_list, scaling=True)[0]
             val_LLs.append(val_LL_epoch)
 
             if best_val_LL is None or val_LL_epoch > best_val_LL:
-                best_A = copy.deepcopy(hmm.A)
-                best_Pi = copy.deepcopy(hmm.Pi)
-                if is_continuous:
-                    best_means = copy.deepcopy(hmm.means)
-                    best_covars = copy.deepcopy(hmm.covars)
-                    if is_mixture:
-                        best_weights = copy.deepcopy(hmm.weights)
-                else:
-                    best_B = copy.deepcopy(hmm.B)
+                best_hmm = copy.deepcopy(hmm)
                 best_epoch = epoch
                 best_val_LL = val_LL_epoch
 
@@ -477,16 +333,7 @@ def baum_welch(
             plt.savefig(fname)
 
     if val_set is not None:
-        hmm.A = best_A
-        hmm.Pi = best_Pi
-        if hasattr(hmm, "B"):
-            hmm.B = best_B
-        elif hasattr(hmm, "weights"):
-            hmm.means = best_means
-            hmm.covars = best_covars
-            hmm.weights = best_weights
-        else:
-            hmm.means = best_means
-            hmm.covars = best_covars
+        hmm.A = best_hmm.A
+        hmm.Pi = best_hmm.Pi
 
     return hmm
