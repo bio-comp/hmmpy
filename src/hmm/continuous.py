@@ -89,7 +89,7 @@ class GaussianHMM:
             assert np.shape(self.A) == (self.N, self.N)
         else:
             raw_A = rand.uniform(size=self.N * self.N).reshape((self.N, self.N))
-            self.A = (raw_A.T / raw_A.T.sum(0)).T
+            self.A = raw_A / raw_A.sum(axis=1, keepdims=True)
             if n_states == 1:
                 self.A = self.A.reshape((1, 1))
 
@@ -176,8 +176,7 @@ class GaussianHMM:
                     obs_t = np.asarray(obs[t])
                     for j in range(self.N):
                         expect_obs_sum[j] += gamma[j, t] * obs_t
-                        diff = obs_t - self.means[j]
-                        expect_obs_cov[j] += gamma[j, t] * np.outer(diff, diff)
+                        expect_obs_cov[j] += gamma[j, t] * np.outer(obs_t, obs_t)
 
         if update_pi:
             self.Pi = expect_si_t0_all / np.sum(expect_si_t0_all)
@@ -191,8 +190,10 @@ class GaussianHMM:
             for j in range(self.N):
                 if expect_si_all[j] > 0:
                     self.means[j] = expect_obs_sum[j] / expect_si_all[j]
-                    self.covars[j] = (expect_obs_cov[j] / expect_si_all[j]) + (
-                        self.reg_covar * np.eye(self.n_features)
+                    self.covars[j] = (
+                        (expect_obs_cov[j] / expect_si_all[j])
+                        - np.outer(self.means[j], self.means[j])
+                        + (self.reg_covar * np.eye(self.n_features))
                     )
 
     def __repr__(self) -> str:
@@ -259,7 +260,7 @@ class MixtureGaussianHMM:
             assert np.shape(self.A) == (self.N, self.N)
         else:
             raw_A = rand.uniform(size=self.N * self.N).reshape((self.N, self.N))
-            self.A = (raw_A.T / raw_A.T.sum(0)).T
+            self.A = raw_A / raw_A.sum(axis=1, keepdims=True)
             if n_states == 1:
                 self.A = self.A.reshape((1, 1))
 
@@ -390,8 +391,7 @@ class MixtureGaussianHMM:
                                 gamma_jk = 0.0
                             expect_mix_sum[j, k] += gamma_jk
                             expect_obs_sum[j, k] += gamma_jk * obs_t
-                            diff = obs_t - mu_jk
-                            expect_obs_cov[j, k] += gamma_jk * np.outer(diff, diff)
+                            expect_obs_cov[j, k] += gamma_jk * np.outer(obs_t, obs_t)
 
         if update_pi:
             self.Pi = expect_si_t0_all / np.sum(expect_si_t0_all)
@@ -410,8 +410,10 @@ class MixtureGaussianHMM:
                 for k in range(self.n_mixtures):
                     if expect_mix_sum[j, k] > 0:
                         self.means[j, k] = expect_obs_sum[j, k] / expect_mix_sum[j, k]
-                        self.covars[j, k] = (expect_obs_cov[j, k] / expect_mix_sum[j, k]) + (
-                            self.reg_covar * np.eye(self.n_features)
+                        self.covars[j, k] = (
+                            (expect_obs_cov[j, k] / expect_mix_sum[j, k])
+                            - np.outer(self.means[j, k], self.means[j, k])
+                            + (self.reg_covar * np.eye(self.n_features))
                         )
 
     def __repr__(self) -> str:

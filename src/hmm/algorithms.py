@@ -14,6 +14,8 @@ from scipy.special import logsumexp
 
 from hmm.base import HMMProtocol
 
+EPSILON = np.finfo(float).tiny
+
 
 class ComputeMode(Enum):
     """Computation mode for HMM algorithms."""
@@ -76,19 +78,18 @@ def forward(
         For "unscaled" mode: (prob_Obs, Alpha, None)
     """
     T = len(obs)
-    tiny = np.finfo(float).tiny
 
     if mode == ComputeMode.LOG:
-        log_Pi = np.log(np.maximum(hmm.Pi, tiny))
-        log_A = np.log(np.maximum(hmm.A, tiny))
+        log_Pi = np.log(np.maximum(hmm.Pi, EPSILON))
+        log_A = np.log(np.maximum(hmm.A, EPSILON))
 
         log_alpha = np.zeros([hmm.N, T], dtype=float)
 
-        log_alpha[:, 0] = log_Pi + np.log(np.maximum(hmm.get_emission_probs(obs[0]), tiny))
+        log_alpha[:, 0] = log_Pi + np.log(np.maximum(hmm.get_emission_probs(obs[0]), EPSILON))
 
         for t in range(1, T):
             log_alpha[:, t] = logsumexp(log_alpha[:, t - 1, None] + log_A, axis=0) + np.log(
-                np.maximum(hmm.get_emission_probs(obs[t]), tiny)
+                np.maximum(hmm.get_emission_probs(obs[t]), EPSILON)
             )
 
         log_prob_Obs = logsumexp(log_alpha[:, T - 1])
@@ -103,14 +104,14 @@ def forward(
     alpha[:, 0] = hmm.Pi * hmm.get_emission_probs(obs[0])
 
     if mode == ComputeMode.SCALED and c is not None:
-        c[0] = 1.0 / np.maximum(np.sum(alpha[:, 0]), tiny)
+        c[0] = 1.0 / np.maximum(np.sum(alpha[:, 0]), EPSILON)
         alpha[:, 0] = c[0] * alpha[:, 0]
 
     for t in range(1, T):
         alpha[:, t] = np.dot(alpha[:, t - 1], hmm.A) * hmm.get_emission_probs(obs[t])
 
         if mode == ComputeMode.SCALED and c is not None:
-            c[t] = 1.0 / np.maximum(np.sum(alpha[:, t]), tiny)
+            c[t] = 1.0 / np.maximum(np.sum(alpha[:, t]), EPSILON)
             alpha[:, t] = alpha[:, t] * c[t]
 
     if mode == ComputeMode.SCALED and c is not None:
@@ -141,10 +142,9 @@ def backward(
         Beta: backward variable matrix (N x T)
     """
     T = len(obs)
-    tiny = np.finfo(float).tiny
 
     if mode == ComputeMode.LOG:
-        log_A = np.log(np.maximum(hmm.A, tiny))
+        log_A = np.log(np.maximum(hmm.A, EPSILON))
 
         log_beta = np.zeros([hmm.N, T], dtype=float)
         log_beta[:, T - 1] = 0.0
@@ -152,12 +152,12 @@ def backward(
         for t in reversed(range(T - 1)):
             log_beta[:, t] = logsumexp(
                 log_A
-                + log_beta[:, t + 1, None]
-                + np.log(np.maximum(hmm.get_emission_probs(obs[t + 1]), tiny)),
-                axis=0,
+                + log_beta[:, t + 1]
+                + np.log(np.maximum(hmm.get_emission_probs(obs[t + 1]), EPSILON)),
+                axis=1,
             )
 
-        return np.exp(log_beta)
+        return log_beta
 
     c: npt.NDArray | None = scaling_coeffs
     if c is None:
@@ -177,7 +177,7 @@ def backward(
         beta[:, t] = np.dot(hmm.A, (hmm.get_emission_probs(obs[t + 1]) * beta[:, t + 1]))
 
         if mode == ComputeMode.SCALED and c is not None and scaling_coeffs is None:
-            c[t] = 1.0 / np.maximum(np.sum(beta[:, t]), tiny)
+            c[t] = 1.0 / np.maximum(np.sum(beta[:, t]), EPSILON)
             beta[:, t] = beta[:, t] * c[t]
         elif mode == ComputeMode.SCALED and c is not None:
             beta[:, t] = beta[:, t] * c[t]
@@ -208,11 +208,10 @@ def viterbi(
     T = len(obs)
 
     delta = np.zeros([hmm.N, T], dtype=float)
-    tiny = np.finfo(float).tiny
 
     if mode in (ComputeMode.SCALED, ComputeMode.LOG):
-        delta[:, 0] = np.log(np.maximum(hmm.Pi, tiny)) + np.log(
-            np.maximum(hmm.get_emission_probs(obs[0]), tiny)
+        delta[:, 0] = np.log(np.maximum(hmm.Pi, EPSILON)) + np.log(
+            np.maximum(hmm.get_emission_probs(obs[0]), EPSILON)
         )
     else:
         delta[:, 0] = hmm.Pi * hmm.get_emission_probs(obs[0])
@@ -221,8 +220,8 @@ def viterbi(
 
     if mode in (ComputeMode.SCALED, ComputeMode.LOG):
         for t in range(1, T):
-            nus = rearrange(delta[:, t - 1], "n -> n 1") + np.log(np.maximum(hmm.A, tiny))
-            delta[:, t] = nus.max(0) + np.log(np.maximum(hmm.get_emission_probs(obs[t]), tiny))
+            nus = rearrange(delta[:, t - 1], "n -> n 1") + np.log(np.maximum(hmm.A, EPSILON))
+            delta[:, t] = nus.max(0) + np.log(np.maximum(hmm.get_emission_probs(obs[t]), EPSILON))
             psi[:, t] = nus.argmax(0)
     else:
         for t in range(1, T):
@@ -271,7 +270,7 @@ def baum_welch(
     Returns:
         Trained HMM model
     """
-    tiny = np.finfo(float).tiny
+    TOL = 1e-4
 
     LLs: list[float] = []
     val_LLs: list[float] = []
@@ -294,21 +293,36 @@ def baum_welch(
 
             LL_epoch += log_prob_obs
 
-            gamma_raw = alpha * beta
-            gamma = gamma_raw / np.maximum(gamma_raw.sum(0), tiny)
+            if mode == ComputeMode.LOG:
+                log_gamma_raw = alpha + beta
+                gamma = np.exp(log_gamma_raw - logsumexp(log_gamma_raw, axis=0))
+            else:
+                gamma_raw = alpha * beta
+                gamma = gamma_raw / np.maximum(gamma_raw.sum(0), EPSILON)
             gammas.append(gamma)
 
             B_next = np.column_stack([hmm.get_emission_probs(o) for o in obs_list[1:]])
 
-            xi = np.einsum(
-                "it, ij, jt, jt -> ijt",
-                alpha[:, :-1],
-                hmm.A,
-                B_next,
-                beta[:, 1:],
-            )
-
-            xi /= np.maximum(xi.sum(axis=(0, 1), keepdims=True), tiny)
+            if mode == ComputeMode.LOG:
+                log_B = np.log(np.maximum(B_next, EPSILON))
+                log_alpha = alpha[:, :-1]
+                log_beta = beta[:, 1:]
+                log_xi = (
+                    rearrange(log_alpha, "n t -> t n 1")
+                    + np.log(hmm.A)
+                    + log_B
+                    + rearrange(log_beta, "n t -> t 1 n")
+                )
+                xi = np.exp(log_xi - logsumexp(log_xi, axis=(1, 2), keepdims=True))
+            else:
+                xi = np.einsum(
+                    "it, ij, jt, jt -> ijt",
+                    alpha[:, :-1],
+                    hmm.A,
+                    B_next,
+                    beta[:, 1:],
+                )
+                xi /= np.maximum(xi.sum(axis=(0, 1), keepdims=True), EPSILON)
 
             xis.append(xi)
 
@@ -323,9 +337,9 @@ def baum_welch(
 
         LLs.append(LL_epoch)
 
-        if epoch > 1 and LLs[epoch - 1] == LL_epoch:
+        if epoch > 1 and abs(LLs[epoch] - LLs[epoch - 1]) < TOL:
             if verbose:
-                print("Log-likelihoods have plateaued--terminating training")
+                print("Log-likelihoods have converged.")
             break
 
         if val_set is not None:
