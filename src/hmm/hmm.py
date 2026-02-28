@@ -144,7 +144,7 @@ class HMM:
             assert np.shape(self.A) == (self.N, self.N)
         else:
             raw_A = rand.uniform(size=self.N * self.N).reshape((self.N, self.N))
-            self.A = (raw_A.T / raw_A.T.sum(0)).T
+            self.A = raw_A / raw_A.sum(axis=1, keepdims=True)
             if n_states == 1:
                 self.A = self.A.reshape((1, 1))
 
@@ -163,7 +163,7 @@ class HMM:
                 self.F = {}
         else:
             B_raw = rand.uniform(0, 1, self.N * self.M).reshape((self.N, self.M))
-            self.B = (B_raw.T / B_raw.T.sum(0)).T
+            self.B = B_raw / B_raw.sum(axis=1, keepdims=True)
 
             if F is not None:
                 self.F = dict(F)
@@ -215,7 +215,7 @@ class HMM:
         expect_si_vk_all = np.zeros([self.N, self.M], dtype=float)
 
         for obs, gamma, xi in zip(obs_seqs, gammas, xis):
-            obs_symbols = [self.symbol_map[o] for o in obs]
+            obs_symbols = np.array([self.symbol_map[o] for o in obs])
             T = len(obs)
 
             expect_si_t0_all += gamma[:, 0]
@@ -225,8 +225,8 @@ class HMM:
             if update_b:
                 B_bar = np.zeros([self.N, self.M], dtype=float)
                 for k in range(self.M):
-                    which = np.array([self.V[k] == x for x in obs_symbols])
-                    B_bar[:, k] = gamma.T[which, :].sum(0)
+                    which = obs_symbols == k
+                    B_bar[:, k] = gamma[:, which].sum(1)
                 expect_si_vk_all += B_bar
 
         if update_pi:
@@ -238,12 +238,10 @@ class HMM:
                     self.A[i, :] = expect_si_sj_all_TM1[i, :] / expect_si_all_TM1[i]
 
         if update_b:
-            if gamma is not None:
-                for i in range(self.N):
-                    if gamma.sum() > 0:
-                        row_sum = expect_si_vk_all[i, :].sum()
-                        if row_sum > 0:
-                            expect_si_vk_all[i, :] = expect_si_vk_all[i, :] / row_sum
+            for i in range(self.N):
+                row_sum = expect_si_vk_all[i, :].sum()
+                if row_sum > 0:
+                    expect_si_vk_all[i, :] = expect_si_vk_all[i, :] / row_sum
 
             self.B = expect_si_vk_all
 
