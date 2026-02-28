@@ -172,11 +172,13 @@ class GaussianHMM:
             expect_si_all += gamma.sum(1)
 
             if update_b:
-                for t in range(T):
-                    obs_t = np.asarray(obs[t])
-                    for j in range(self.N):
-                        expect_obs_sum[j] += gamma[j, t] * obs_t
-                        expect_obs_cov[j] += gamma[j, t] * np.outer(obs_t, obs_t)
+                obs_matrix = np.array(obs)
+                expect_obs_sum += gamma @ obs_matrix
+                for j in range(self.N):
+                    expect_obs_cov[j] += np.sum(
+                        gamma[j, :, None, None] * np.einsum("ti,tj->tij", obs_matrix, obs_matrix),
+                        axis=0,
+                    )
 
         if update_pi:
             self.Pi = expect_si_t0_all / np.sum(expect_si_t0_all)
