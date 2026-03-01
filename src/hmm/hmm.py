@@ -9,75 +9,97 @@ import numpy.typing as npt
 from numpy import random as rand
 
 from hmm.algorithms import ComputeMode, forward
+from hmm.base import HMMProtocol
 
 
 class HMMClassifier:
     """
-    A binary hmm classifier that uses two hmms: one corresponding
-    to the positive activity and one corresponding to the negative
-    activity.
+    An N-class HMM classifier that uses multiple HMMs, one for each class.
+    Classification is performed by computing the log-likelihood of each model
+    and selecting the class with the highest probability.
     """
 
     def __init__(
         self,
-        neg_hmm: HMM | None = None,
-        pos_hmm: HMM | None = None,
+        models: dict[str, HMMProtocol] | None = None,
+        neg_hmm: HMMProtocol | None = None,
+        pos_hmm: HMMProtocol | None = None,
     ) -> None:
         """
         Args:
-            neg_hmm: hmm corresponding to negative activity
-            pos_hmm: hmm corresponding to positive activity
+            models: Dictionary mapping class labels to HMM models (N-class mode)
+            neg_hmm: (Deprecated) HMM for negative class (binary mode)
+            pos_hmm: (Deprecated) HMM for positive class (binary mode)
         """
-        self.neg_hmm = neg_hmm
-        self.pos_hmm = pos_hmm
+        if models is not None:
+            self.models = models
+            self._mode = "multiclass"
+            self.pos_hmm = models.get("positive")
+            self.neg_hmm = models.get("negative")
+        elif neg_hmm is not None and pos_hmm is not None:
+            self.models = {"positive": pos_hmm, "negative": neg_hmm}
+            self._mode = "binary"
+            self.pos_hmm = pos_hmm
+            self.neg_hmm = neg_hmm
+        else:
+            self.models = {}
+            self._mode = "binary"
+            self.pos_hmm = None
+            self.neg_hmm = None
 
-    def classify(self, sample: Sequence[int]) -> float:
+    def classify(self, sample: Sequence[int]) -> str | float:
         """
-        Classification is performed by calculating the
-        log odds for the positive activity.  Since the hmms
-        return a log-likelihood (due to scaling)
-        of the corresponding activity, the difference of
-        the two log-likelihoods is the log odds.
+        Classify observation sequence.
+
+        In multiclass mode: returns class label (str) with highest log-likelihood.
+        In binary mode: returns log odds (positive - negative log-likelihood).
 
         Args:
             sample: observation sequence
 
         Returns:
-            log odds (positive - negative log-likelihood)
+            Class label (str) in multiclass mode, log odds (float) in binary mode
 
         Raises:
-            ValueError: if pos_hmm or neg_hmm is missing
+            ValueError: if no models are configured
         """
-        if self.pos_hmm is None or self.neg_hmm is None:
+        if not self.models or (self.pos_hmm is None and self.neg_hmm is None):
             raise ValueError("pos/neg hmm(s) missing")
 
-        pos_hmm = self.pos_hmm
-        neg_hmm = self.neg_hmm
+        if self._mode == "binary" or ("positive" in self.models and "negative" in self.models):
+            pos_ll = forward(self.models["positive"], sample, mode=ComputeMode.SCALED)[0]
+            neg_ll = forward(self.models["negative"], sample, mode=ComputeMode.SCALED)[0]
+            return pos_ll - neg_ll
 
-        pos_ll = forward(pos_hmm, sample, mode=ComputeMode.SCALED)[0]
-        neg_ll = forward(neg_hmm, sample, mode=ComputeMode.SCALED)[0]
+        scores = self.get_scores(sample)
+        return max(scores, key=scores.get)
 
-        return pos_ll - neg_ll
-
-    def add_pos_hmm(self, pos_hmm: HMM) -> None:
+    def get_scores(self, sample: Sequence[int]) -> dict[str, float]:
         """
-        Add the hmm corresponding to positive
-        activity.  Replaces current positive hmm, if it exists.
+        Compute log-likelihood scores for each class.
 
         Args:
-            pos_hmm: the HMM to add for positive classification
+            sample: observation sequence
+
+        Returns:
+            Dictionary mapping class labels to log-likelihoods
         """
+        scores = {}
+        for label, model in self.models.items():
+            scores[label] = forward(model, sample, mode=ComputeMode.SCALED)[0]
+        return scores
+
+    def add_pos_hmm(self, pos_hmm: HMMProtocol) -> None:
+        """Add the hmm corresponding to positive activity."""
+        self.models["positive"] = pos_hmm
         self.pos_hmm = pos_hmm
+        self._mode = "binary"
 
-    def add_neg_hmm(self, neg_hmm: HMM) -> None:
-        """
-        Add the hmm corresponding to negative
-        activity.  Replaces current negative hmm, if it exists.
-
-        Args:
-            neg_hmm: the HMM to add for negative classification
-        """
+    def add_neg_hmm(self, neg_hmm: HMMProtocol) -> None:
+        """Add the hmm corresponding to negative activity."""
+        self.models["negative"] = neg_hmm
         self.neg_hmm = neg_hmm
+        self._mode = "binary"
 
 
 class HMM:
@@ -182,6 +204,30 @@ class HMM:
             self.Labels = list(Labels)
         else:
             self.Labels = list(range(self.N))
+
+        self._validate_parameters()
+
+    def _validate_parameters(self) -> None:
+        """Validate that model parameters form valid probability distributions.
+
+        Raises:
+            ValueError: if transition matrix, emission matrix, or initial state distribution
+                do not sum to 1
+        """
+        if not np.allclose(self.A.sum(axis=1), 1.0, atol=1e-6):
+            raise ValueError(
+                f"Transition matrix A rows must sum to 1. Got row sums: {self.A.sum(axis=1)}"
+            )
+
+        if not np.allclose(self.B.sum(axis=1), 1.0, atol=1e-6):
+            raise ValueError(
+                f"Emission matrix B rows must sum to 1. Got row sums: {self.B.sum(axis=1)}"
+            )
+
+        if not np.allclose(self.Pi.sum(), 1.0, atol=1e-6):
+            raise ValueError(
+                f"Initial state distribution Pi must sum to 1. Got sum: {self.Pi.sum()}"
+            )
 
     def get_emission_probs(self, obs_t: int | npt.NDArray) -> npt.NDArray:
         """Returns emission probabilities for all states given observation obs_t.
