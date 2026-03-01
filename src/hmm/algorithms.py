@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import warnings
 from collections.abc import Sequence
 from enum import Enum
 from typing import TYPE_CHECKING
@@ -188,7 +189,7 @@ def backward(
 def viterbi(
     hmm: AnyHMM,
     obs: Sequence[int] | Sequence[npt.NDArray],
-    mode: ComputeMode = ComputeMode.SCALED,
+    mode: ComputeMode = ComputeMode.LOG,
 ) -> tuple[list[int], npt.NDArray, npt.NDArray]:
     """Calculate P(Q|Obs, hmm) and yield the state sequence Q* that maximizes this probability.
 
@@ -197,19 +198,32 @@ def viterbi(
     Args:
         hmm: the HMM model
         obs: observation sequence
-        mode: computation mode - "scaled" (default), "log", or "unscaled"
+        mode: computation mode - "log" (default) or "unscaled".
+            Note: "scaled" is not supported for Viterbi as it uses logarithmic
+            transformations (not Rabiner's scaling coefficients which are specific
+            to Forward-Backward).
 
     Returns:
         (Q_star, Delta, Psi) where:
             - Q_star: optimal state sequence (list of state indices)
             - Delta: max probability matrix (N x T)
             - Psi: backpointer matrix (N x T)
+
+    Raises:
+        ValueError: if mode is SCALED (not supported for Viterbi)
     """
+    if mode == ComputeMode.SCALED:
+        raise ValueError(
+            "ComputeMode.SCALED is not supported for Viterbi. "
+            "Viterbi uses logarithmic transformations to avoid underflow, "
+            "not Rabiner's scaling coefficients. Use ComputeMode.LOG instead."
+        )
+
     T = len(obs)
 
     delta = np.zeros([hmm.N, T], dtype=float)
 
-    if mode in (ComputeMode.SCALED, ComputeMode.LOG):
+    if mode == ComputeMode.LOG:
         delta[:, 0] = np.log(np.maximum(hmm.Pi, EPSILON)) + np.log(
             np.maximum(hmm.get_emission_probs(obs[0]), EPSILON)
         )
@@ -218,7 +232,7 @@ def viterbi(
 
     psi = np.zeros([hmm.N, T], dtype=int)
 
-    if mode in (ComputeMode.SCALED, ComputeMode.LOG):
+    if mode == ComputeMode.LOG:
         for t in range(1, T):
             nus = rearrange(delta[:, t - 1], "n -> n 1") + np.log(np.maximum(hmm.A, EPSILON))
             delta[:, t] = nus.max(0) + np.log(np.maximum(hmm.get_emission_probs(obs[t]), EPSILON))
@@ -337,10 +351,18 @@ def baum_welch(
 
         LLs.append(LL_epoch)
 
-        if epoch > 1 and abs(LLs[epoch] - LLs[epoch - 1]) < TOL:
-            if verbose:
-                print("Log-likelihoods have converged.")
-            break
+        if epoch > 1:
+            ll_change = LLs[epoch] - LLs[epoch - 1]
+            if ll_change < TOL:
+                if ll_change < 0:
+                    warnings.warn(
+                        f"Log-likelihood decreased from {LLs[epoch - 1]:.6f} to {LLs[epoch]:.6f}. "
+                        "This may indicate numerical instability or a bug in the M-step.",
+                        RuntimeWarning,
+                    )
+                if verbose:
+                    print("Log-likelihoods have converged.")
+                break
 
         if val_set is not None:
             val_LL_epoch = 0.0
