@@ -146,6 +146,17 @@ class GaussianHMM:
             probs[i] = self.emission_prob(i, obs_t)
         return probs
 
+    def get_all_emission_probs(self, obs_seq: Sequence[int] | Sequence[npt.NDArray]) -> npt.NDArray:
+        """Returns emission probabilities for all states across entire observation sequence.
+
+        Args:
+            obs_seq: Observation sequence (list of observation vectors)
+
+        Returns:
+            Array of shape (N, T) with probability densities for each state and time step
+        """
+        return np.column_stack([self.get_emission_probs(obs_t) for obs_t in obs_seq])
+
     def m_step(
         self,
         obs_seqs: list[Sequence[npt.NDArray]],
@@ -349,6 +360,17 @@ class MixtureGaussianHMM:
             probs[i] = self.emission_prob(i, obs_t)
         return probs
 
+    def get_all_emission_probs(self, obs_seq: Sequence[int] | Sequence[npt.NDArray]) -> npt.NDArray:
+        """Returns emission probabilities for all states across entire observation sequence.
+
+        Args:
+            obs_seq: Observation sequence (list of observation vectors)
+
+        Returns:
+            Array of shape (N, T) with probability densities for each state and time step
+        """
+        return np.column_stack([self.get_emission_probs(obs_t) for obs_t in obs_seq])
+
     def m_step(
         self,
         obs_seqs: list[Sequence[npt.NDArray]],
@@ -378,22 +400,38 @@ class MixtureGaussianHMM:
             expect_si_all += gamma.sum(1)
 
             if update_b:
-                for t in range(T):
-                    obs_t = np.asarray(obs[t])
-                    b_j = self.get_emission_probs(obs_t)
-                    for j in range(self.N):
-                        for k in range(self.n_mixtures):
-                            c_jk = self.weights[j, k]
-                            mu_jk = self.means[j, k]
-                            sigma_jk = self.covars[j, k]
-                            pdf = gaussian_pdf(obs_t, mu_jk, sigma_jk, self.reg_covar)
-                            if b_j[j] > 0:
-                                gamma_jk = gamma[j, t] * c_jk * pdf / b_j[j]
-                            else:
-                                gamma_jk = 0.0
-                            expect_mix_sum[j, k] += gamma_jk
-                            expect_obs_sum[j, k] += gamma_jk * obs_t
-                            expect_obs_cov[j, k] += gamma_jk * np.outer(obs_t, obs_t)
+                obs_array = np.array(obs)
+                b_j = self.get_all_emission_probs(obs)
+
+                for j in range(self.N):
+                    for k in range(self.n_mixtures):
+                        mu_jk = self.means[j, k]
+                        sigma_jk = self.covars[j, k]
+                        c_jk = self.weights[j, k]
+
+                        diff = obs_array - mu_jk
+                        reg_cov = sigma_jk + (self.reg_covar * np.eye(self.n_features))
+
+                        try:
+                            cov_inv = np.linalg.inv(reg_cov)
+                            det_cov = np.linalg.det(reg_cov)
+                            exponent = -0.5 * np.sum(diff @ cov_inv * diff, axis=1)
+                            pdfs = np.exp(exponent) / np.sqrt(
+                                ((2 * np.pi) ** self.n_features) * det_cov
+                            )
+                        except np.linalg.LinAlgError:
+                            pdfs = np.zeros(T)
+
+                        b_j_t = b_j[j, :]
+                        gamma_jk = np.where(b_j_t > 0, gamma[j, :] * c_jk * pdfs / b_j_t, 0.0)
+                        gamma_jk = np.asarray(gamma_jk)
+
+                        expect_mix_sum[j, k] += gamma_jk.sum()
+                        expect_obs_sum[j, k] += np.sum(gamma_jk[:, None] * obs_array, axis=0)
+                        expect_obs_cov[j, k] += np.sum(
+                            gamma_jk[:, None, None] * np.einsum("ti,tj->tij", obs_array, obs_array),
+                            axis=0,
+                        )
 
         if update_pi:
             self.Pi = expect_si_t0_all / np.sum(expect_si_t0_all)
