@@ -2,8 +2,7 @@
 
 import numpy as np
 
-from hmm.algorithms import baum_welch, forward, viterbi
-from hmm.algorithms import ComputeMode
+from hmm.algorithms import ComputeMode, baum_welch, forward, viterbi
 from hmm.continuous import GaussianHMM
 
 
@@ -146,7 +145,7 @@ class TestGaussianHMMViterbi:
         hmm = GaussianHMM(n_states=2, n_features=1, A=A, Pi=Pi, means=means, covars=covars)
 
         obs = np.array([[0.0], [0.1], [-0.1], [0.0], [10.0], [10.1]])
-        q_star, _, _ = viterbi(hmm, obs, mode=ComputeMode.SCALED)
+        q_star, _, _ = viterbi(hmm, obs, mode=ComputeMode.LOG)
 
         assert len(q_star) == 6
         assert all(0 <= q < 2 for q in q_star)

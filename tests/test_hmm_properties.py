@@ -84,7 +84,7 @@ def test_viterbi_path_valid(n_states: int, n_symbols: int) -> None:
     hmm = HMM(n_states=n_states, A=A, B=B, V=V)
     obs = V * 3
 
-    path, _, _ = viterbi(hmm, obs, mode=ComputeMode.SCALED)
+    path, _, _ = viterbi(hmm, obs, mode=ComputeMode.LOG)
     assert len(path) == len(obs), "Path length should match observation length"
     assert all(0 <= s < hmm.N for s in path), "All states in path should be valid"
 
@@ -101,7 +101,7 @@ def test_viterbi_prob_at_least_forward(n_states: int, n_symbols: int) -> None:
     obs = V * 3
 
     forward_prob, _, _ = forward(hmm, obs, mode=ComputeMode.SCALED)
-    _, delta, _ = viterbi(hmm, obs, mode=ComputeMode.SCALED)
+    _, delta, _ = viterbi(hmm, obs, mode=ComputeMode.LOG)
     viterbi_log_prob = np.max(delta[:, -1])
 
     assert viterbi_log_prob <= forward_prob + 1e-3, "Viterbi prob should be <= Forward prob"
@@ -146,7 +146,7 @@ def test_single_state_hmm(n_states: int, n_symbols: int) -> None:
     log_prob, alpha = forward(hmm, obs, mode=ComputeMode.UNSCALED)
     assert np.isfinite(log_prob), "Forward should work"
 
-    path, delta, _ = viterbi(hmm, obs, mode=ComputeMode.SCALED)
+    path, delta, _ = viterbi(hmm, obs, mode=ComputeMode.LOG)
     assert len(path) == len(obs), "Viterbi path length should match"
 
 

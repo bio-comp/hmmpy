@@ -190,7 +190,7 @@ class TestViterbiAlgorithm:
         hmm = HMM(n_states=2, A=A, B=B, V=V)
 
         obs = [1, 2, 1, 6, 6]
-        q_star, delta, psi = viterbi(hmm, obs, mode=ComputeMode.SCALED)
+        q_star, delta, psi = viterbi(hmm, obs, mode=ComputeMode.LOG)
 
         assert len(q_star) == 5
         assert delta.shape == (2, 5)
@@ -205,7 +205,7 @@ class TestViterbiAlgorithm:
         hmm = HMM(n_states=2, A=A, B=B, V=V)
 
         obs = [1, 2, 1, 6, 6]
-        q_star, delta, psi = viterbi(hmm, obs, mode=ComputeMode.SCALED)
+        q_star, delta, psi = viterbi(hmm, obs, mode=ComputeMode.LOG)
 
         assert len(q_star) == 5
 
@@ -217,7 +217,7 @@ class TestViterbiAlgorithm:
         hmm = HMM(n_states=2, A=A, B=B, V=V)
 
         with pytest.raises(IndexError):
-            viterbi(hmm, [], mode=ComputeMode.SCALED)
+            viterbi(hmm, [], mode=ComputeMode.LOG)
 
     def test_viterbi_unseen_symbol(self) -> None:
         """Test Viterbi with unseen symbol raises KeyError."""
@@ -227,7 +227,7 @@ class TestViterbiAlgorithm:
         hmm = HMM(n_states=2, A=A, B=B, V=V)
 
         with pytest.raises(KeyError):
-            viterbi(hmm, [99], mode=ComputeMode.SCALED)
+            viterbi(hmm, [99], mode=ComputeMode.LOG)
 
 
 class TestBaumWelch:
