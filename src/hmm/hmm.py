@@ -143,8 +143,8 @@ class HMM:
             self.A = np.array(A, dtype=float)
             assert np.shape(self.A) == (self.N, self.N)
         else:
-            raw_A = rand.uniform(size=self.N * self.N).reshape((self.N, self.N))
-            self.A = raw_A / raw_A.sum(axis=1, keepdims=True)
+            A_raw = rand.uniform(size=self.N * self.N).reshape((self.N, self.N))
+            self.A = A_raw / A_raw.sum(axis=1, keepdims=True)
             if n_states == 1:
                 self.A = self.A.reshape((1, 1))
 
@@ -223,7 +223,7 @@ class HMM:
 
         expect_si_t0_all = np.zeros(self.N, dtype=float)
         expect_si_all_TM1 = np.zeros(self.N, dtype=float)
-        expect_si_sj_all_TM1 = np.zeros([self.N, self.N], dtype=float)
+        expected_transitions = np.zeros([self.N, self.N], dtype=float)
         expect_si_vk_all = np.zeros([self.N, self.M], dtype=float)
 
         for obs, gamma, xi in zip(obs_seqs, gammas, xis):
@@ -232,7 +232,7 @@ class HMM:
 
             expect_si_t0_all += gamma[:, 0]
             expect_si_all_TM1 += gamma[:, : T - 1].sum(1)
-            expect_si_sj_all_TM1 += xi[:, :, : T - 1].sum(2)
+            expected_transitions += xi[:, :, : T - 1].sum(2)
 
             if update_b:
                 B_bar = np.zeros([self.N, self.M], dtype=float)
@@ -247,7 +247,7 @@ class HMM:
         if update_a:
             for i in range(self.N):
                 if expect_si_all_TM1[i] > 0:
-                    self.A[i, :] = expect_si_sj_all_TM1[i, :] / expect_si_all_TM1[i]
+                    self.A[i, :] = expected_transitions[i, :] / expect_si_all_TM1[i]
 
         if update_b:
             for i in range(self.N):

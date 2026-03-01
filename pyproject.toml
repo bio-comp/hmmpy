@@ -70,7 +70,6 @@ ignore = [
     "N801",  # Keep HMM_Classifier for Rabiner tutorial compatibility
     "N803",  # Keep A, B, Pi, etc. for Rabiner tutorial compatibility
     "N806",  # Keep raw_A, B_raw for Rabiner tutorial compatibility
-    "UP045",  # Keep Optional[X] for readability
 ]
 
 [tool.mypy]

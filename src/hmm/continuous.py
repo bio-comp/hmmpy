@@ -88,8 +88,8 @@ class GaussianHMM:
             self.A = np.array(A, dtype=float)
             assert np.shape(self.A) == (self.N, self.N)
         else:
-            raw_A = rand.uniform(size=self.N * self.N).reshape((self.N, self.N))
-            self.A = raw_A / raw_A.sum(axis=1, keepdims=True)
+            A_raw = rand.uniform(size=self.N * self.N).reshape((self.N, self.N))
+            self.A = A_raw / A_raw.sum(axis=1, keepdims=True)
             if n_states == 1:
                 self.A = self.A.reshape((1, 1))
 
@@ -169,7 +169,7 @@ class GaussianHMM:
         """Perform M-step for GaussianHMM."""
         expect_si_t0_all = np.zeros(self.N, dtype=float)
         expect_si_all_TM1 = np.zeros(self.N, dtype=float)
-        expect_si_sj_all_TM1 = np.zeros([self.N, self.N], dtype=float)
+        expected_transitions = np.zeros([self.N, self.N], dtype=float)
         expect_si_all = np.zeros(self.N, dtype=float)
         expect_obs_sum = np.zeros([self.N, self.n_features], dtype=float)
         expect_obs_cov = np.zeros([self.N, self.n_features, self.n_features], dtype=float)
@@ -179,7 +179,7 @@ class GaussianHMM:
 
             expect_si_t0_all += gamma[:, 0]
             expect_si_all_TM1 += gamma[:, : T - 1].sum(1)
-            expect_si_sj_all_TM1 += xi[:, :, : T - 1].sum(2)
+            expected_transitions += xi[:, :, : T - 1].sum(2)
             expect_si_all += gamma.sum(1)
 
             if update_b:
@@ -197,7 +197,7 @@ class GaussianHMM:
         if update_a:
             for i in range(self.N):
                 if expect_si_all_TM1[i] > 0:
-                    self.A[i, :] = expect_si_sj_all_TM1[i, :] / expect_si_all_TM1[i]
+                    self.A[i, :] = expected_transitions[i, :] / expect_si_all_TM1[i]
 
         if update_b:
             for j in range(self.N):
@@ -272,8 +272,8 @@ class MixtureGaussianHMM:
             self.A = np.array(A, dtype=float)
             assert np.shape(self.A) == (self.N, self.N)
         else:
-            raw_A = rand.uniform(size=self.N * self.N).reshape((self.N, self.N))
-            self.A = raw_A / raw_A.sum(axis=1, keepdims=True)
+            A_raw = rand.uniform(size=self.N * self.N).reshape((self.N, self.N))
+            self.A = A_raw / A_raw.sum(axis=1, keepdims=True)
             if n_states == 1:
                 self.A = self.A.reshape((1, 1))
 
@@ -383,7 +383,7 @@ class MixtureGaussianHMM:
         """Perform M-step for MixtureGaussianHMM."""
         expect_si_t0_all = np.zeros(self.N, dtype=float)
         expect_si_all_TM1 = np.zeros(self.N, dtype=float)
-        expect_si_sj_all_TM1 = np.zeros([self.N, self.N], dtype=float)
+        expected_transitions = np.zeros([self.N, self.N], dtype=float)
         expect_si_all = np.zeros(self.N, dtype=float)
         expect_mix_sum = np.zeros([self.N, self.n_mixtures], dtype=float)
         expect_obs_sum = np.zeros([self.N, self.n_mixtures, self.n_features], dtype=float)
@@ -396,7 +396,7 @@ class MixtureGaussianHMM:
 
             expect_si_t0_all += gamma[:, 0]
             expect_si_all_TM1 += gamma[:, : T - 1].sum(1)
-            expect_si_sj_all_TM1 += xi[:, :, : T - 1].sum(2)
+            expected_transitions += xi[:, :, : T - 1].sum(2)
             expect_si_all += gamma.sum(1)
 
             if update_b:
@@ -439,7 +439,7 @@ class MixtureGaussianHMM:
         if update_a:
             for i in range(self.N):
                 if expect_si_all_TM1[i] > 0:
-                    self.A[i, :] = expect_si_sj_all_TM1[i, :] / expect_si_all_TM1[i]
+                    self.A[i, :] = expected_transitions[i, :] / expect_si_all_TM1[i]
 
         if update_b:
             for j in range(self.N):
