@@ -118,6 +118,24 @@ class GaussianHMM:
         else:
             self.Labels = list(range(self.N))
 
+        self._validate_parameters()
+
+    def _validate_parameters(self) -> None:
+        """Validate that model parameters form valid probability distributions.
+
+        Raises:
+            ValueError: if transition matrix or initial state distribution do not sum to 1
+        """
+        if not np.allclose(self.A.sum(axis=1), 1.0, atol=1e-6):
+            raise ValueError(
+                f"Transition matrix A rows must sum to 1. Got row sums: {self.A.sum(axis=1)}"
+            )
+
+        if not np.allclose(self.Pi.sum(), 1.0, atol=1e-6):
+            raise ValueError(
+                f"Initial state distribution Pi must sum to 1. Got sum: {self.Pi.sum()}"
+            )
+
     def emission_prob(self, state: int, obs: npt.ArrayLike) -> float:
         """Calculate b_j(O) = N(O, mu_j, U_j).
 
@@ -311,6 +329,30 @@ class MixtureGaussianHMM:
             self.Labels = list(Labels)
         else:
             self.Labels = list(range(self.N))
+
+        self._validate_parameters()
+
+    def _validate_parameters(self) -> None:
+        """Validate that model parameters form valid probability distributions.
+
+        Raises:
+            ValueError: if transition matrix, initial state distribution, or
+                mixture weights do not sum to 1
+        """
+        if not np.allclose(self.A.sum(axis=1), 1.0, atol=1e-6):
+            raise ValueError(
+                f"Transition matrix A rows must sum to 1. Got row sums: {self.A.sum(axis=1)}"
+            )
+
+        if not np.allclose(self.Pi.sum(), 1.0, atol=1e-6):
+            raise ValueError(
+                f"Initial state distribution Pi must sum to 1. Got sum: {self.Pi.sum()}"
+            )
+
+        if not np.allclose(self.weights.sum(axis=1), 1.0, atol=1e-6):
+            raise ValueError(
+                f"Mixture weights must sum to 1 per state. Got row sums: {self.weights.sum(axis=1)}"
+            )
 
     def _gaussian_pdf(self, mean: npt.NDArray, cov: npt.NDArray, obs: npt.ArrayLike) -> float:
         """Calculate Gaussian PDF for multivariate case.
