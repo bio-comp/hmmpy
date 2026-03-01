@@ -315,7 +315,8 @@ def baum_welch(
                 gamma = gamma_raw / np.maximum(gamma_raw.sum(0), EPSILON)
             gammas.append(gamma)
 
-            B_next = np.column_stack([hmm.get_emission_probs(o) for o in obs_list[1:]])
+            all_emissions = hmm.get_all_emission_probs(obs_list)
+            B_next = all_emissions[:, 1:]
 
             if mode == ComputeMode.LOG:
                 log_B = np.log(np.maximum(B_next, EPSILON))

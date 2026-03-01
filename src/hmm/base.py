@@ -19,6 +19,17 @@ class HMMProtocol(Protocol):
         """Returns emission probabilities for all states given a single observation."""
         ...
 
+    def get_all_emission_probs(self, obs_seq: Sequence[int] | Sequence[npt.NDArray]) -> npt.NDArray:
+        """Returns emission probabilities for all states across entire observation sequence.
+
+        Args:
+            obs_seq: Observation sequence (list of symbols for discrete, arrays for continuous)
+
+        Returns:
+            Array of shape (N, T) with emission probabilities for each state and time step
+        """
+        ...
+
     def m_step(
         self,
         obs_seqs: list[Sequence[npt.NDArray]],

@@ -196,6 +196,18 @@ class HMM:
             obs_t = int(np.squeeze(obs_t))
         return self.B[:, self.symbol_map[obs_t]]
 
+    def get_all_emission_probs(self, obs_seq: Sequence[int] | Sequence[npt.NDArray]) -> npt.NDArray:
+        """Returns emission probabilities for all states across entire observation sequence.
+
+        Args:
+            obs_seq: Observation sequence (list of symbols)
+
+        Returns:
+            Array of shape (N, T) with emission probabilities for each state and time step
+        """
+        indices = [self.symbol_map[o] for o in obs_seq]
+        return self.B[:, indices]
+
     def m_step(
         self,
         obs_seqs: list[Sequence[npt.NDArray]],
