@@ -262,6 +262,7 @@ def baum_welch(
     graph: bool = False,
     fname: str = "ll.eps",
     verbose: bool = False,
+    tol: float = 1e-4,
 ) -> HMMProtocol:
     """EM algorithm to train the HMM.
 
@@ -280,12 +281,11 @@ def baum_welch(
         graph: flag to plot log-likelihoods (default: False)
         fname: file name to save plot figure (default: "ll.eps")
         verbose: flag to print training progress (default: False)
+        tol: convergence tolerance for log-likelihood (default: 1e-4)
 
     Returns:
         Trained HMM model
     """
-    TOL = 1e-4
-
     LLs: list[float] = []
     val_LLs: list[float] = []
     best_hmm = copy.deepcopy(hmm)
@@ -354,7 +354,7 @@ def baum_welch(
 
         if epoch > 1:
             ll_change = LLs[epoch] - LLs[epoch - 1]
-            if ll_change < TOL:
+            if ll_change < tol:
                 if ll_change < 0:
                     warnings.warn(
                         f"Log-likelihood decreased from {LLs[epoch - 1]:.6f} to {LLs[epoch]:.6f}. "
