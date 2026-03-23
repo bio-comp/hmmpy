@@ -6,16 +6,17 @@ import copy
 import warnings
 from collections.abc import Sequence
 from enum import Enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypeAlias
 
 import numpy as np
 import numpy.typing as npt
 from einops import rearrange
-from scipy.special import logsumexp
+from scipy.special import logsumexp  # type: ignore[import-untyped]
 
-from hmm.base import HMMProtocol
+from hmm.base import HMMProtocol, ObservationSequence
 
 EPSILON = np.finfo(float).tiny
+ForwardResult: TypeAlias = tuple[float, npt.NDArray] | tuple[float, npt.NDArray, npt.NDArray | None]
 
 
 class ComputeMode(Enum):
@@ -27,10 +28,7 @@ class ComputeMode(Enum):
 
 
 if TYPE_CHECKING:
-    from hmm.continuous import GaussianHMM, MixtureGaussianHMM
     from hmm.hmm import HMM
-
-    AnyHMM = HMM | GaussianHMM | MixtureGaussianHMM
 
 
 def symbol_index(hmm: HMM, obs: Sequence[int]) -> list[int]:
@@ -56,10 +54,10 @@ def symbol_index(hmm: HMM, obs: Sequence[int]) -> list[int]:
 
 
 def forward(
-    hmm: AnyHMM,
-    obs: Sequence[int] | Sequence[npt.NDArray],
+    hmm: HMMProtocol,
+    obs: ObservationSequence,
     mode: ComputeMode = ComputeMode.SCALED,
-) -> tuple[float, npt.NDArray, npt.NDArray | None]:
+) -> ForwardResult:
     """Calculate the probability of an observation sequence, Obs, given the model.
 
     Implements the forward algorithm from Rabiner (1989).
@@ -84,7 +82,7 @@ def forward(
         log_Pi = np.log(np.maximum(hmm.Pi, EPSILON))
         log_A = np.log(np.maximum(hmm.A, EPSILON))
 
-        log_alpha = np.zeros([hmm.N, T], dtype=float)
+        log_alpha = np.zeros((hmm.N, T), dtype=float)
 
         log_alpha[:, 0] = log_Pi + np.log(np.maximum(hmm.get_emission_probs(obs[0]), EPSILON))
 
@@ -100,7 +98,7 @@ def forward(
     if mode == ComputeMode.SCALED:
         c = np.zeros(T, dtype=float)
 
-    alpha = np.zeros([hmm.N, T], dtype=float)
+    alpha = np.zeros((hmm.N, T), dtype=float)
 
     alpha[:, 0] = hmm.Pi * hmm.get_emission_probs(obs[0])
 
@@ -124,8 +122,8 @@ def forward(
 
 
 def backward(
-    hmm: AnyHMM,
-    obs: Sequence[int] | Sequence[npt.NDArray],
+    hmm: HMMProtocol,
+    obs: ObservationSequence,
     mode: ComputeMode = ComputeMode.SCALED,
     scaling_coeffs: npt.NDArray | None = None,
 ) -> npt.NDArray:
@@ -147,7 +145,7 @@ def backward(
     if mode == ComputeMode.LOG:
         log_A = np.log(np.maximum(hmm.A, EPSILON))
 
-        log_beta = np.zeros([hmm.N, T], dtype=float)
+        log_beta = np.zeros((hmm.N, T), dtype=float)
         log_beta[:, T - 1] = 0.0
 
         for t in reversed(range(T - 1)):
@@ -165,7 +163,7 @@ def backward(
         if mode == ComputeMode.SCALED:
             c = np.zeros(T, dtype=float)
 
-    beta = np.zeros([hmm.N, T], dtype=float)
+    beta = np.zeros((hmm.N, T), dtype=float)
     beta[:, T - 1] = 1.0
 
     if mode == ComputeMode.SCALED and c is not None and scaling_coeffs is None:
@@ -187,8 +185,8 @@ def backward(
 
 
 def viterbi(
-    hmm: AnyHMM,
-    obs: Sequence[int] | Sequence[npt.NDArray],
+    hmm: HMMProtocol,
+    obs: ObservationSequence,
     mode: ComputeMode = ComputeMode.LOG,
 ) -> tuple[list[int], npt.NDArray, npt.NDArray]:
     """Calculate P(Q|Obs, hmm) and yield the state sequence Q* that maximizes this probability.
@@ -221,7 +219,7 @@ def viterbi(
 
     T = len(obs)
 
-    delta = np.zeros([hmm.N, T], dtype=float)
+    delta = np.zeros((hmm.N, T), dtype=float)
 
     if mode == ComputeMode.LOG:
         delta[:, 0] = np.log(np.maximum(hmm.Pi, EPSILON)) + np.log(
@@ -230,7 +228,7 @@ def viterbi(
     else:
         delta[:, 0] = hmm.Pi * hmm.get_emission_probs(obs[0])
 
-    psi = np.zeros([hmm.N, T], dtype=int)
+    psi = np.zeros((hmm.N, T), dtype=int)
 
     if mode == ComputeMode.LOG:
         for t in range(1, T):
@@ -243,18 +241,28 @@ def viterbi(
             delta[:, t] = nus.max(0) * hmm.get_emission_probs(obs[t])
             psi[:, t] = nus.argmax(0)
 
-    q_star = [int(np.argmax(delta[:, T - 1]))]
+    q_star = [0] * T
+    q_star[T - 1] = int(np.argmax(delta[:, T - 1]))
     for t in reversed(range(T - 1)):
-        q_star.insert(0, int(psi[q_star[0], t + 1]))
+        q_star[t] = int(psi[q_star[t + 1], t + 1])
 
     return (q_star, delta, psi)
 
 
+def _unpack_forward_result(result: ForwardResult) -> tuple[float, npt.NDArray, npt.NDArray | None]:
+    """Normalize forward outputs across computation modes."""
+    if len(result) == 3:
+        return result
+
+    log_prob_obs, alpha = result
+    return log_prob_obs, alpha, None
+
+
 def baum_welch(
     hmm: HMMProtocol,
-    obs_seqs: list[Sequence[npt.NDArray]],
+    obs_seqs: list[ObservationSequence],
     epochs: int = 20,
-    val_set: list[Sequence[npt.NDArray]] | None = None,
+    val_set: list[ObservationSequence] | None = None,
     update_pi: bool = True,
     update_a: bool = True,
     update_b: bool = True,
@@ -302,7 +310,7 @@ def baum_welch(
             obs_list = list(obs)
 
             forward_result = forward(hmm=hmm, obs=obs_list, mode=mode)
-            log_prob_obs, alpha, c = forward_result
+            log_prob_obs, alpha, c = _unpack_forward_result(forward_result)
             beta = backward(hmm=hmm, obs=obs_list, mode=mode, scaling_coeffs=c)
 
             LL_epoch += log_prob_obs
@@ -324,11 +332,14 @@ def baum_welch(
                 log_beta = beta[:, 1:]
                 log_xi = (
                     rearrange(log_alpha, "n t -> t n 1")
-                    + np.log(hmm.A)
-                    + log_B
+                    + np.log(np.maximum(hmm.A, EPSILON))
+                    + rearrange(log_B, "n t -> t 1 n")
                     + rearrange(log_beta, "n t -> t 1 n")
                 )
-                xi = np.exp(log_xi - logsumexp(log_xi, axis=(1, 2), keepdims=True))
+                xi = rearrange(
+                    np.exp(log_xi - logsumexp(log_xi, axis=(1, 2), keepdims=True)),
+                    "t i j -> i j t",
+                )
             else:
                 xi = np.einsum(
                     "it, ij, jt, jt -> ijt",
@@ -412,7 +423,8 @@ def baum_welch(
             plt.savefig(fname)
 
     if val_set is not None:
-        hmm.A = best_hmm.A
-        hmm.Pi = best_hmm.Pi
+        # Restore the full best-performing model rather than just A/Pi.
+        hmm.__dict__.clear()
+        hmm.__dict__.update(copy.deepcopy(best_hmm.__dict__))
 
     return hmm

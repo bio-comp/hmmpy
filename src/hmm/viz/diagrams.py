@@ -37,7 +37,7 @@ def plot_state_diagram(
     else:
         fig = ax.figure  # type: ignore[assignment]
 
-    G = nx.DiGraph()
+    G: Any = nx.DiGraph()
 
     for i in range(hmm.N):
         G.add_node(i, label=f"S{i}")

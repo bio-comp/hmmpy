@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Hidden Markov Models in Python - based on Rabiner (1989) tutorial"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "Michael Hamilton", email = "mike.hamilton7@gmail.com"},
 ]
@@ -12,7 +12,6 @@ keywords = ["hmm", "hidden-markov-models", "machine-learning", "pattern-recognit
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -45,9 +44,17 @@ notebook = [
     "ipykernel>=6.25",
 ]
 all = [
-    "hmmpy[dependencies]",
-    "hmmpy[dev]",
-    "hmmpy[notebook]",
+    "pytest>=7.4",
+    "ruff>=0.1",
+    "mypy>=1.5",
+    "pytest-cov>=4.1",
+    "hypothesis>=6.100",
+    "types-networkx",
+    "jupyter-book==1.0.0",
+    "pydata-sphinx-theme>=0.14",
+    "networkx>=3.0",
+    "jupyterlab>=4.0",
+    "ipykernel>=6.25",
 ]
 
 [build-system]

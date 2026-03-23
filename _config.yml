@@ -2,9 +2,26 @@
 
 title: HMMPY
 author: Mike Hamilton
-copyright: 2026
+copyright: "2026"
 
-exclude_patterns: [".DS_Store", "Thumbs.db"]
+exclude_patterns:
+  - ".DS_Store"
+  - "Thumbs.db"
+  - ".git/**"
+  - ".github/**"
+  - ".hypothesis/**"
+  - ".mypy_cache/**"
+  - ".opencode/**"
+  - ".pytest_cache/**"
+  - ".ruff_cache/**"
+  - ".venv/**"
+  - ".worktrees/**"
+  - "_build/**"
+  - "dist/**"
+  - "docs/**"
+  - "AGENTS.md"
+
+only_build_toc_files: true
 
 html:
   title: HMMPY Documentation
@@ -20,3 +37,10 @@ parse:
     - linkify
     - substitution
     - tasklist
+
+sphinx:
+  local_extensions:
+    hmmpy_docs_ext: .
+  config:
+    nb_kernel_rgx_aliases:
+      "^python3$": "hmmpy-docs"
