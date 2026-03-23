@@ -34,7 +34,8 @@ uv pip install -e ".[all]"
 ## Quick Start
 
 ```python
-from hmm import HMM, forward, viterbi, baum_welch
+from hmm import HMM, baum_welch, forward, viterbi
+from hmm.algorithms import ComputeMode
 
 # Create an HMM with 2 states
 A = [[0.95, 0.05], [0.05, 0.95]]  # Transition matrix
@@ -44,10 +45,10 @@ V = [1, 2, 3, 4, 5, 6]            # Observation symbols
 hmm = HMM(n_states=2, A=A, B=B, V=V)
 
 # Run forward algorithm
-log_prob, alpha, c = forward(hmm, [1, 2, 1, 6, 6], scaling=True)
+log_prob, alpha, c = forward(hmm, [1, 2, 1, 6, 6], mode=ComputeMode.SCALED)
 
 # Decode most likely state sequence
-states, delta, psi = viterbi(hmm, [1, 2, 1, 6, 6], scaling=True)
+states, delta, psi = viterbi(hmm, [1, 2, 1, 6, 6], mode=ComputeMode.LOG)
 
 # Train on observation sequences
 trained_hmm = baum_welch(hmm, [[1, 2, 3], [6, 5, 4]], epochs=20)
@@ -58,7 +59,7 @@ trained_hmm = baum_welch(hmm, [[1, 2, 3], [6, 5, 4]], epochs=20)
 | Algorithm | Description |
 |-----------|-------------|
 | **Forward** | Calculate P(Obs|HMM) using forward variables |
-| **Backward** | Calculate backward probabilities forposterior decoding |
+| **Backward** | Calculate backward probabilities for posterior decoding |
 | **Viterbi** | Find most likely state sequence |
 | **Baum-Welch** | Train HMM parameters using EM |
 | **HMMClassifier** | Binary classification using two HMMs |

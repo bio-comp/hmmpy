@@ -3,6 +3,7 @@
 import numpy as np
 import pytest
 
+import hmm.algorithms as algorithms
 from hmm import HMM, HMMClassifier, backward, baum_welch, forward, viterbi
 from hmm.algorithms import ComputeMode
 
@@ -91,8 +92,37 @@ class TestHMMClassifier:
         """Test classification raises error when HMMs are missing."""
         classifier = HMMClassifier()
 
-        with pytest.raises(ValueError, match="pos/neg hmm.*missing"):
+        with pytest.raises(ValueError, match="No HMM models configured"):
             classifier.classify([1, 2, 3])
+
+    def test_classify_multiclass_returns_label(self) -> None:
+        """Multiclass classifier should return the best label."""
+        A = np.array([[1.0]])
+        V = [0, 1]
+        models = {
+            "spam": HMM(n_states=1, A=A, B=np.array([[0.9, 0.1]]), V=V),
+            "ham": HMM(n_states=1, A=A, B=np.array([[0.1, 0.9]]), V=V),
+        }
+
+        classifier = HMMClassifier(models=models)
+
+        assert classifier.classify([0, 0, 0]) == "spam"
+
+    def test_classify_multiclass_does_not_fall_back_to_binary(self) -> None:
+        """Multiclass mode should not be hijacked by positive/negative labels."""
+        A = np.array([[1.0]])
+        V = [0, 1]
+        models = {
+            "positive": HMM(n_states=1, A=A, B=np.array([[0.9, 0.1]]), V=V),
+            "negative": HMM(n_states=1, A=A, B=np.array([[0.1, 0.9]]), V=V),
+            "neutral": HMM(n_states=1, A=A, B=np.array([[0.5, 0.5]]), V=V),
+        }
+
+        classifier = HMMClassifier(models=models)
+        result = classifier.classify([0, 0, 0])
+
+        assert result == "positive"
+        assert isinstance(result, str)
 
 
 class TestForwardAlgorithm:
@@ -174,9 +204,13 @@ class TestBackwardAlgorithm:
         hmm = HMM(n_states=2, A=A, B=B, V=V)
 
         obs = [1, 2, 1, 6, 6]
-        beta = backward(hmm, obs)
+        prob_obs, _ = forward(hmm, obs, mode=ComputeMode.UNSCALED)
+        beta = backward(hmm, obs, mode=ComputeMode.UNSCALED)
 
         assert beta.shape == (2, 5)
+        assert np.allclose(beta[:, -1], np.ones(hmm.N))
+        start_prob = np.sum(hmm.Pi * hmm.get_emission_probs(obs[0]) * beta[:, 0])
+        assert np.isclose(start_prob, prob_obs)
 
 
 class TestViterbiAlgorithm:
@@ -276,6 +310,23 @@ class TestBaumWelch:
 
         assert hmm1.A.shape == hmm2.A.shape
 
+    def test_baum_welch_log_mode(self) -> None:
+        """Test Baum-Welch runs in LOG mode."""
+        A = np.array([[0.95, 0.05], [0.05, 0.95]])
+        B = np.array([[1.0 / 6] * 6, [1.0 / 10] * 5 + [1.0 / 2]])
+        V = [1, 2, 3, 4, 5, 6]
+        hmm = HMM(n_states=2, A=A.copy(), B=B.copy(), V=V)
+
+        trained = baum_welch(
+            hmm,
+            [[1, 2, 1, 6, 6], [6, 6, 1, 2, 1]],
+            epochs=2,
+            mode=ComputeMode.LOG,
+        )
+
+        assert trained.A.shape == (2, 2)
+        assert trained.B.shape == (2, 6)
+
     def test_baum_welch_update_flags(self) -> None:
         """Test Baum-Welch update flags."""
         A = np.array([[0.95, 0.05], [0.05, 0.95]])
@@ -300,3 +351,75 @@ class TestBaumWelch:
         trained = baum_welch(hmm, [], epochs=1)
 
         assert trained.N == 2
+
+    def test_baum_welch_validation_restores_best_emission_matrix(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Validation rollback should restore the full best model, including B."""
+
+        class RollbackHMM(HMM):
+            def __init__(self) -> None:
+                super().__init__(
+                    n_states=2,
+                    A=np.array([[0.9, 0.1], [0.2, 0.8]]),
+                    B=np.array([[0.6, 0.4], [0.3, 0.7]]),
+                    V=[0, 1],
+                )
+                self._epoch = 0
+
+            def m_step(
+                self,
+                obs_seqs: list[list[int]],
+                gammas: list[np.ndarray],
+                xis: list[np.ndarray],
+                update_pi: bool = True,
+                update_a: bool = True,
+                update_b: bool = True,
+            ) -> None:
+                del obs_seqs, gammas, xis, update_pi, update_a, update_b
+                self._epoch += 1
+                if self._epoch == 1:
+                    self.B = np.array([[0.95, 0.05], [0.1, 0.9]])
+                else:
+                    self.B = np.array([[0.55, 0.45], [0.45, 0.55]])
+
+        hmm = RollbackHMM()
+        expected_best_B = np.array([[0.95, 0.05], [0.1, 0.9]])
+        train_seqs = [[0, 1, 0, 1]]
+        val_seqs = [[0, 0, 0, 0]]
+        real_forward = algorithms.forward
+        val_lls = iter([10.0, 0.0])
+
+        def controlled_forward(
+            hmm: HMM,
+            obs: list[int],
+            mode: ComputeMode = ComputeMode.SCALED,
+        ) -> tuple[float, np.ndarray, np.ndarray | None]:
+            log_prob, alpha, c = real_forward(hmm, obs, mode=mode)
+            if list(obs) == val_seqs[0]:
+                return (next(val_lls), alpha, c)
+            return (log_prob, alpha, c)
+
+        monkeypatch.setattr(algorithms, "forward", controlled_forward)
+
+        trained = baum_welch(hmm, train_seqs, epochs=2, val_set=val_seqs)
+
+        assert np.allclose(trained.B, expected_best_B)
+
+    def test_m_step_streaming(self) -> None:
+        """Test streaming m_step returns sufficient statistics for one sequence."""
+        hmm = HMM(n_states=2, V=[0, 1])
+        obs_seq = [0, 1, 0, 1]
+        gamma = np.array([[0.8, 0.2, 0.7, 0.3], [0.2, 0.8, 0.3, 0.7]])
+        xi = np.zeros((2, 2, 3))
+        xi[0, 0, :] = 0.5
+        xi[1, 1, :] = 0.5
+
+        # Should return sufficient statistics dictionary
+        stats = hmm.m_step_streaming(obs_seq, gamma, xi)
+
+        assert "expect_si_t0" in stats
+        assert "expected_transitions" in stats
+        assert stats["expect_si_t0"].shape == (2,)
+        assert stats["expected_transitions"].shape == (2, 2)

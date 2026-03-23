@@ -1,53 +1,39 @@
-"""HMM Protocol defining the interface for all HMM implementations."""
+"""Protocol definitions shared by trainable HMM implementations."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Protocol
+from typing import Protocol, TypeAlias
 
 import numpy.typing as npt
 
+Observation: TypeAlias = int | npt.NDArray
+ObservationSequence: TypeAlias = Sequence[Observation]
+
 
 class HMMProtocol(Protocol):
-    """Protocol defining the required interface for any HMM implementation."""
+    """Protocol defining the interface required by the algorithm module."""
 
     N: int
     Pi: npt.NDArray
     A: npt.NDArray
 
-    def get_emission_probs(self, obs_t: npt.NDArray) -> npt.NDArray:
-        """Returns emission probabilities for all states given a single observation."""
+    def get_emission_probs(self, obs_t: Observation) -> npt.NDArray:
+        """Return emission probabilities for all states for a single observation."""
         ...
 
-    def get_all_emission_probs(self, obs_seq: Sequence[int] | Sequence[npt.NDArray]) -> npt.NDArray:
-        """Returns emission probabilities for all states across entire observation sequence.
-
-        Args:
-            obs_seq: Observation sequence (list of symbols for discrete, arrays for continuous)
-
-        Returns:
-            Array of shape (N, T) with emission probabilities for each state and time step
-        """
+    def get_all_emission_probs(self, obs_seq: ObservationSequence) -> npt.NDArray:
+        """Return emission probabilities for all states across an observation sequence."""
         ...
 
     def m_step(
         self,
-        obs_seqs: list[Sequence[npt.NDArray]],
+        obs_seqs: list[ObservationSequence],
         gammas: list[npt.NDArray],
         xis: list[npt.NDArray],
         update_pi: bool = True,
         update_a: bool = True,
         update_b: bool = True,
     ) -> None:
-        """
-        Performs the Maximization step to update model parameters in-place.
-
-        Args:
-            obs_seqs: The original list of observation sequences.
-            gammas: Expected state occupancies. List of arrays of shape (N, T).
-            xis: Expected transitions. List of arrays of shape (N, N, T-1).
-            update_pi: Whether to update initial state probabilities.
-            update_a: Whether to update transition probabilities.
-            update_b: Whether to update emission parameters (B, means, covars, etc.).
-        """
+        """Update model parameters in-place from expected sufficient statistics."""
         ...

@@ -9,7 +9,7 @@ import numpy.typing as npt
 from numpy import random as rand
 
 from hmm.algorithms import ComputeMode, forward
-from hmm.base import HMMProtocol
+from hmm.base import HMMProtocol, Observation, ObservationSequence
 
 
 class HMMClassifier:
@@ -63,16 +63,18 @@ class HMMClassifier:
         Raises:
             ValueError: if no models are configured
         """
-        if not self.models or (self.pos_hmm is None and self.neg_hmm is None):
-            raise ValueError("pos/neg hmm(s) missing")
+        if not self.models:
+            raise ValueError("No HMM models configured")
 
-        if self._mode == "binary" or ("positive" in self.models and "negative" in self.models):
+        if self._mode == "binary":
+            if "positive" not in self.models or "negative" not in self.models:
+                raise ValueError("Binary classification requires positive and negative HMMs")
             pos_ll = forward(self.models["positive"], sample, mode=ComputeMode.SCALED)[0]
             neg_ll = forward(self.models["negative"], sample, mode=ComputeMode.SCALED)[0]
             return pos_ll - neg_ll
 
         scores = self.get_scores(sample)
-        return max(scores, key=scores.get)
+        return max(scores, key=lambda label: scores[label])
 
     def get_scores(self, sample: Sequence[int]) -> dict[str, float]:
         """
@@ -84,7 +86,7 @@ class HMMClassifier:
         Returns:
             Dictionary mapping class labels to log-likelihoods
         """
-        scores = {}
+        scores: dict[str, float] = {}
         for label, model in self.models.items():
             scores[label] = forward(model, sample, mode=ComputeMode.SCALED)[0]
         return scores
@@ -229,7 +231,13 @@ class HMM:
                 f"Initial state distribution Pi must sum to 1. Got sum: {self.Pi.sum()}"
             )
 
-    def get_emission_probs(self, obs_t: int | npt.NDArray) -> npt.NDArray:
+    def _obs_to_symbol(self, obs_t: Observation) -> int:
+        """Normalize discrete observations to a symbol in V."""
+        if isinstance(obs_t, np.ndarray):
+            return int(np.squeeze(obs_t))
+        return int(obs_t)
+
+    def get_emission_probs(self, obs_t: Observation) -> npt.NDArray:
         """Returns emission probabilities for all states given observation obs_t.
 
         Args:
@@ -238,11 +246,9 @@ class HMM:
         Returns:
             Array of shape (N,) with emission probabilities for each state
         """
-        if not isinstance(obs_t, int):
-            obs_t = int(np.squeeze(obs_t))
-        return self.B[:, self.symbol_map[obs_t]]
+        return self.B[:, self.symbol_map[self._obs_to_symbol(obs_t)]]
 
-    def get_all_emission_probs(self, obs_seq: Sequence[int] | Sequence[npt.NDArray]) -> npt.NDArray:
+    def get_all_emission_probs(self, obs_seq: ObservationSequence) -> npt.NDArray:
         """Returns emission probabilities for all states across entire observation sequence.
 
         Args:
@@ -251,12 +257,12 @@ class HMM:
         Returns:
             Array of shape (N, T) with emission probabilities for each state and time step
         """
-        indices = [self.symbol_map[o] for o in obs_seq]
+        indices = [self.symbol_map[self._obs_to_symbol(o)] for o in obs_seq]
         return self.B[:, indices]
 
     def m_step(
         self,
-        obs_seqs: list[Sequence[npt.NDArray]],
+        obs_seqs: list[ObservationSequence],
         gammas: list[npt.NDArray],
         xis: list[npt.NDArray],
         update_pi: bool = True,
@@ -273,7 +279,10 @@ class HMM:
         expect_si_vk_all = np.zeros([self.N, self.M], dtype=float)
 
         for obs, gamma, xi in zip(obs_seqs, gammas, xis):
-            obs_symbols = np.array([self.symbol_map[o] for o in obs])
+            obs_symbols = np.array(
+                [self.symbol_map[self._obs_to_symbol(o)] for o in obs],
+                dtype=int,
+            )
             T = len(obs)
 
             expect_si_t0_all += gamma[:, 0]
@@ -305,6 +314,50 @@ class HMM:
 
             for i in self.F:
                 self.B[i, :] = self.F[i]
+
+    def m_step_streaming(
+        self,
+        obs_seq: ObservationSequence,
+        gamma: npt.NDArray,
+        xi: npt.NDArray,
+    ) -> dict[str, npt.NDArray]:
+        """Compute sufficient statistics for one observation sequence.
+
+        This enables memory-efficient online/batch updates without storing
+        all sequences in memory.
+
+        Args:
+            obs_seq: Single observation sequence
+            gamma: Expected state occupancies (N, T)
+            xi: Expected transitions (N, N, T-1)
+
+        Returns:
+            Dictionary with sufficient statistics:
+            - expect_si_t0: expected state at t=0
+            - expect_si_all_TM1: sum of gamma over T-1
+            - expected_transitions: sum of xi over T-1
+            - expect_si_vk_all: expected emissions per symbol
+        """
+        T = len(obs_seq)
+        obs_symbols = np.array(
+            [self.symbol_map[self._obs_to_symbol(o)] for o in obs_seq],
+            dtype=int,
+        )
+
+        stats = {
+            "expect_si_t0": gamma[:, 0].copy(),
+            "expect_si_all_TM1": gamma[:, : T - 1].sum(1).copy(),
+            "expected_transitions": xi[:, :, : T - 1].sum(2).copy(),
+        }
+
+        if self.M > 0:
+            B_bar = np.zeros([self.N, self.M], dtype=float)
+            for k in range(self.M):
+                which = obs_symbols == k
+                B_bar[:, k] = gamma[:, which].sum(1)
+            stats["expect_si_vk_all"] = B_bar
+
+        return stats
 
     def __repr__(self) -> str:
         retn = ""
