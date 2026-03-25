@@ -1,6 +1,7 @@
 """Tests for GaussianHMM class."""
 
 import numpy as np
+import pytest
 
 from hmm.algorithms import ComputeMode, baum_welch, forward, viterbi
 from hmm.continuous import GaussianHMM
@@ -89,6 +90,26 @@ class TestGaussianEmissionProbability:
 
         assert probs.shape == (2,)
         assert np.all(probs > 0)
+
+    def test_get_all_emission_probs_uses_vectorized_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """get_all_emission_probs should not delegate per timestep to get_emission_probs."""
+        means = np.array([[0.0], [10.0]])
+        covars = np.array([[[1.0]], [[1.0]]])
+        hmm = GaussianHMM(n_states=2, n_features=1, means=means, covars=covars)
+
+        def _fail_get_emission_probs(_obs_t: int | np.ndarray) -> np.ndarray:
+            raise AssertionError("Vectorized path should not call get_emission_probs")
+
+        monkeypatch.setattr(hmm, "get_emission_probs", _fail_get_emission_probs)
+
+        obs = np.array([[0.0], [0.1], [-0.1]])
+        probs = hmm.get_all_emission_probs(obs)
+
+        assert probs.shape == (2, 3)
+        assert np.all(probs > 0.0)
 
 
 class TestGaussianHMMForwardAlgorithm:

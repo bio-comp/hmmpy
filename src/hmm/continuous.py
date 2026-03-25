@@ -1,6 +1,7 @@
 """Continuous Hidden Markov Model implementation."""
 
 from collections.abc import Sequence
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
@@ -39,6 +40,37 @@ def gaussian_pdf(
         det_cov = np.linalg.det(reg_cov)
         exponent = -0.5 * np.dot(np.dot(diff.T, cov_inv), diff)
         return float(np.exp(exponent) / np.sqrt(((2 * np.pi) ** d) * det_cov))
+
+
+def _as_observation_matrix(
+    obs_seq: Sequence[int] | Sequence[npt.NDArray],
+    n_features: int,
+) -> npt.NDArray:
+    """Convert an observation sequence into a 2D float matrix of shape (T, n_features)."""
+    obs_array = np.asarray(obs_seq, dtype=float)
+
+    if obs_array.ndim == 0:
+        if n_features != 1:
+            raise ValueError(
+                f"Expected observations with {n_features} features, got scalar input."
+            )
+        return obs_array.reshape(1, 1)
+
+    if obs_array.ndim == 1:
+        if n_features == 1:
+            return obs_array.reshape(-1, 1)
+        if obs_array.shape[0] == n_features:
+            return obs_array.reshape(1, n_features)
+        raise ValueError(
+            f"Expected observations with {n_features} features, got shape {obs_array.shape}."
+        )
+
+    if obs_array.ndim == 2 and obs_array.shape[1] == n_features:
+        return obs_array
+
+    raise ValueError(
+        f"Expected observations with shape (T, {n_features}), got {obs_array.shape}."
+    )
 
 
 class GaussianHMM:
@@ -173,7 +205,30 @@ class GaussianHMM:
         Returns:
             Array of shape (N, T) with probability densities for each state and time step
         """
-        return np.column_stack([self.get_emission_probs(obs_t) for obs_t in obs_seq])
+        obs_array = _as_observation_matrix(obs_seq, self.n_features)
+        T = obs_array.shape[0]
+        probs = np.zeros((self.N, T), dtype=float)
+
+        for i in range(self.N):
+            diff = obs_array - self.means[i]
+            reg_cov = self.covars[i] + (self.reg_covar * np.eye(self.n_features))
+
+            try:
+                if self.n_features == 1:
+                    var = float(reg_cov[0, 0])
+                    exponent = -0.5 * (diff[:, 0] ** 2) / var
+                    probs[i, :] = np.exp(exponent) / np.sqrt(2 * np.pi * var)
+                else:
+                    cov_inv = np.linalg.inv(reg_cov)
+                    det_cov = np.linalg.det(reg_cov)
+                    exponent = -0.5 * np.einsum("ti,ij,tj->t", diff, cov_inv, diff)
+                    probs[i, :] = np.exp(exponent) / np.sqrt(
+                        ((2 * np.pi) ** self.n_features) * det_cov
+                    )
+            except np.linalg.LinAlgError:
+                probs[i, :] = 0.0
+
+        return probs
 
     def m_step(
         self,
@@ -411,7 +466,37 @@ class MixtureGaussianHMM:
         Returns:
             Array of shape (N, T) with probability densities for each state and time step
         """
-        return np.column_stack([self.get_emission_probs(obs_t) for obs_t in obs_seq])
+        obs_array = _as_observation_matrix(obs_seq, self.n_features)
+        component_pdfs = self._component_pdf_matrix(obs_array)
+        weighted_pdfs = self.weights[:, :, None] * component_pdfs
+        return cast(npt.NDArray, weighted_pdfs.sum(axis=1))
+
+    def _component_pdf_matrix(self, obs_array: npt.NDArray) -> npt.NDArray:
+        """Return component densities with shape (N, n_mixtures, T)."""
+        T = obs_array.shape[0]
+        component_pdfs = np.zeros((self.N, self.n_mixtures, T), dtype=float)
+
+        for j in range(self.N):
+            for k in range(self.n_mixtures):
+                diff = obs_array - self.means[j, k]
+                reg_cov = self.covars[j, k] + (self.reg_covar * np.eye(self.n_features))
+
+                try:
+                    if self.n_features == 1:
+                        var = float(reg_cov[0, 0])
+                        exponent = -0.5 * (diff[:, 0] ** 2) / var
+                        component_pdfs[j, k, :] = np.exp(exponent) / np.sqrt(2 * np.pi * var)
+                    else:
+                        cov_inv = np.linalg.inv(reg_cov)
+                        det_cov = np.linalg.det(reg_cov)
+                        exponent = -0.5 * np.einsum("ti,ij,tj->t", diff, cov_inv, diff)
+                        component_pdfs[j, k, :] = np.exp(exponent) / np.sqrt(
+                            ((2 * np.pi) ** self.n_features) * det_cov
+                        )
+                except np.linalg.LinAlgError:
+                    component_pdfs[j, k, :] = 0.0
+
+        return component_pdfs
 
     def m_step(
         self,
@@ -442,38 +527,24 @@ class MixtureGaussianHMM:
             expect_si_all += gamma.sum(1)
 
             if update_b:
-                obs_array = np.array(obs)
-                b_j = self.get_all_emission_probs(obs)
+                obs_array = _as_observation_matrix(obs, self.n_features)
+                component_pdfs = self._component_pdf_matrix(obs_array)
+                weighted_pdfs = self.weights[:, :, None] * component_pdfs
+                denom = weighted_pdfs.sum(axis=1, keepdims=True)
+                responsibilities = np.where(
+                    denom > 0,
+                    gamma[:, None, :] * weighted_pdfs / denom,
+                    0.0,
+                )
 
-                for j in range(self.N):
-                    for k in range(self.n_mixtures):
-                        mu_jk = self.means[j, k]
-                        sigma_jk = self.covars[j, k]
-                        c_jk = self.weights[j, k]
-
-                        diff = obs_array - mu_jk
-                        reg_cov = sigma_jk + (self.reg_covar * np.eye(self.n_features))
-
-                        try:
-                            cov_inv = np.linalg.inv(reg_cov)
-                            det_cov = np.linalg.det(reg_cov)
-                            exponent = -0.5 * np.sum(diff @ cov_inv * diff, axis=1)
-                            pdfs = np.exp(exponent) / np.sqrt(
-                                ((2 * np.pi) ** self.n_features) * det_cov
-                            )
-                        except np.linalg.LinAlgError:
-                            pdfs = np.zeros(T)
-
-                        b_j_t = b_j[j, :]
-                        gamma_jk = np.where(b_j_t > 0, gamma[j, :] * c_jk * pdfs / b_j_t, 0.0)
-                        gamma_jk = np.asarray(gamma_jk)
-
-                        expect_mix_sum[j, k] += gamma_jk.sum()
-                        expect_obs_sum[j, k] += np.sum(gamma_jk[:, None] * obs_array, axis=0)
-                        expect_obs_cov[j, k] += np.sum(
-                            gamma_jk[:, None, None] * np.einsum("ti,tj->tij", obs_array, obs_array),
-                            axis=0,
-                        )
+                expect_mix_sum += responsibilities.sum(axis=2)
+                expect_obs_sum += np.einsum("nkt,tf->nkf", responsibilities, obs_array)
+                expect_obs_cov += np.einsum(
+                    "nkt,ti,tj->nkij",
+                    responsibilities,
+                    obs_array,
+                    obs_array,
+                )
 
         if update_pi:
             self.Pi = expect_si_t0_all / np.sum(expect_si_t0_all)

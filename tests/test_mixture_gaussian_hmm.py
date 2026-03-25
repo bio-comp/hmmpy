@@ -1,6 +1,7 @@
 """Tests for MixtureGaussianHMM class."""
 
 import numpy as np
+import pytest
 
 from hmm.continuous import MixtureGaussianHMM
 
@@ -119,6 +120,24 @@ class TestMixtureGaussianEmission:
         probs = hmm.get_emission_probs(np.array([0.0]))
 
         assert probs.shape == (2,)
+
+    def test_get_all_emission_probs_uses_vectorized_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """get_all_emission_probs should not delegate per timestep to get_emission_probs."""
+        hmm = MixtureGaussianHMM(n_states=2, n_features=1, n_mixtures=2)
+
+        def _fail_get_emission_probs(_obs_t: int | np.ndarray) -> np.ndarray:
+            raise AssertionError("Vectorized path should not call get_emission_probs")
+
+        monkeypatch.setattr(hmm, "get_emission_probs", _fail_get_emission_probs)
+
+        obs = np.array([[0.0], [0.5], [1.0]])
+        probs = hmm.get_all_emission_probs(obs)
+
+        assert probs.shape == (2, 3)
+        assert np.all(probs > 0.0)
 
 
 class TestMixtureGaussianHMMTraining:
